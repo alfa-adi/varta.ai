@@ -1,0 +1,92 @@
+﻿python.exe : Traceback (most 
+recent call last):
+At line:1 char:1
++ & "c:\Users\admin\OneDrive\D
+esktop\varta.ai\venv\Scripts\p
+ython.exe"  ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~
+    + CategoryInfo          : 
+    NotSpecified: (Traceback  
+   (most recent call last):   
+ :String) [], RemoteExcept    
+ion
+    + FullyQualifiedErrorId : 
+    NativeCommandError
+ 
+  File "C:\Users\admin\OneDriv
+e\Desktop\varta.ai\tests\test_
+adapter.py", line 84, in 
+<module>
+    asyncio.run(test_tts())
+    ~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\admin\AppData
+\Local\Python\pythoncore-3.14-
+64\Lib\asyncio\runners.py", 
+line 204, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\admin\AppData
+\Local\Python\pythoncore-3.14-
+64\Lib\asyncio\runners.py", 
+line 127, in run
+    return self._loop.run_unti
+l_complete(task)
+           ~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~^^^^^^
+  File "C:\Users\admin\AppData
+\Local\Python\pythoncore-3.14-
+64\Lib\asyncio\base_events.py"
+, line 719, in 
+run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\admin\OneDriv
+e\Desktop\varta.ai\tests\test_
+adapter.py", line 63, in 
+test_tts
+    result = await 
+adapter.synthesise(
+             
+^^^^^^^^^^^^^^^^^^^^^^^^^
+        TTSInput(text=text, 
+language=lang, 
+voice_gender=gender, 
+audio_format="mp3")
+        ^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\admin\OneDriv
+e\Desktop\varta.ai\adapter\sar
+vam_tts.py", line 127, in 
+synthesise
+    raise RuntimeError(
+        f"Sarvam TTS API 
+error {response.status_code}: 
+{err_body}"
+    )
+RuntimeError: Sarvam TTS API 
+error 400: {'error': 
+{'message': "Speaker 
+'anushka' is not compatible 
+with model bulbul:v3. 
+Available speakers for 
+bulbul:v3 are: aditya, ritu, 
+ashutosh, priya, neha, rahul, 
+pooja, rohan, simran, kavya, 
+amit, dev, ishita, shreya, 
+ratan, varun, manan, sumit, 
+roopa, kabir, aayan, shubh, 
+advait, amelia, sophia, 
+anand, tanya, tarun, sunny, 
+mani, gokul, vijay, shruti, 
+suhani, mohit, kavitha, 
+rehan, soham, rupali, 
+niharika", 'code': 
+'invalid_request_error', 
+'request_id': '20260319_a8aa4b
+ca-d27e-48c8-9e90-4405ef68fa4d
+'}}

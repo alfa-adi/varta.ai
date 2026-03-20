@@ -1,0 +1,66 @@
+{
+  "models": [
+    {
+      "id": "sarvam/saaras-v3",
+      "type": "ASR",
+      "provider": "sarvam",
+      "label": "Saaras v3",
+      "provider_model_id": "saaras:v3",
+      "endpoint": "https://api.sarvam.ai/speech-to-text",
+      "supported_languages": [
+        "hi-IN", "bn-IN", "ta-IN", "te-IN", "gu-IN", "kn-IN",
+        "ml-IN", "mr-IN", "od-IN", "pa-IN", "as-IN", "ur-IN",
+        "ne-IN", "kok-IN", "ks-IN", "sd-IN", "sa-IN", "sat-IN",
+        "mni-IN", "brx-IN", "mai-IN", "doi-IN", "en-IN"
+      ],
+      "quality_score": 0.91,
+      "avg_latency_ms": 850,
+      "max_audio_seconds": 30,
+      "supported_modes": ["transcribe", "translate", "verbatim", "translit", "codemix"],
+      "notes": "Primary ASR. language_code is optional — omit for auto-detection."
+    },
+    {
+      "id": "sarvam/sarvam-translate",
+      "type": "NMT",
+      "provider": "sarvam",
+      "label": "Sarvam Translate",
+      "provider_model_id": "sarvam-translate",
+      "endpoint": "https://api.sarvam.ai/translate",
+      "supported_src_languages": [
+        "hi-IN", "bn-IN", "ta-IN", "te-IN", "gu-IN", "kn-IN",
+        "ml-IN", "mr-IN", "od-IN", "pa-IN", "as-IN", "ur-IN",
+        "ne-IN", "kok-IN", "ks-IN", "sd-IN", "sa-IN", "sat-IN",
+        "mni-IN", "brx-IN", "mai-IN", "doi-IN", "en-IN"
+      ],
+      "supported_tgt_languages": [
+        "hi-IN", "bn-IN", "ta-IN", "te-IN", "gu-IN", "kn-IN",
+        "ml-IN", "mr-IN", "od-IN", "pa-IN", "as-IN", "ur-IN",
+        "ne-IN", "kok-IN", "ks-IN", "sd-IN", "sa-IN", "sat-IN",
+        "mni-IN", "brx-IN", "mai-IN", "doi-IN", "en-IN"
+      ],
+      "quality_score": 0.89,
+      "avg_latency_ms": 420,
+      "notes": "Auto-detects source language if source_language_code omitted."
+    },
+    {
+      "id": "sarvam/bulbul-v3",
+      "type": "TTS",
+      "provider": "sarvam",
+      "label": "Bulbul v3",
+      "provider_model_id": "bulbul:v3",
+      "endpoint": "https://api.sarvam.ai/text-to-speech",
+      "supported_languages": [
+        "hi-IN", "bn-IN", "ta-IN", "te-IN", "gu-IN", "kn-IN",
+        "ml-IN", "mr-IN", "od-IN", "pa-IN", "en-IN"
+      ],
+      "quality_score": 0.92,
+      "avg_latency_ms": 350,
+      "voices": {
+        "female": ["meera", "pavithra", "maitreyi", "arvind"],
+        "male":   ["arvind", "amol", "amartya"]
+      },
+      "supported_formats": ["mp3", "wav", "opus", "flac", "aac"],
+      "notes": "Best-in-class for 11 languages. Returns base64-encoded audio."
+    }
+  ]
+}

@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sarvam Translation PoC</title>
+<style>
+  :root {
+    --bg: #07101f; --surface: #0c1524; --border: #1a2840;
+    --accent: #3b82f6; --green: #22c55e; --amber: #f59e0b;
+    --text: #e2e8f0; --muted: #64748b; --subtle: #94a3b8;
+    --a-col: #60a5fa; --b-col: #f97316;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif;
+         min-height: 100vh; display: flex; flex-direction: column; }
+
+  header { background: #0a1422; border-bottom: 1px solid var(--border);
+           padding: 12px 20px; display: flex; align-items: center; gap: 10px; }
+  header h1 { font-size: 16px; font-weight: 700; }
+  header p  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  .setup-bar { background: #0a1729; border-bottom: 1px solid var(--border);
+               padding: 10px 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .setup-bar label { font-size: 12px; color: var(--muted); }
+  .setup-bar select { background: var(--surface); border: 1px solid var(--border);
+                      color: var(--text); padding: 5px 8px; border-radius: 6px; font-size: 12px; }
+  .btn { cursor: pointer; font-family: inherit; border: none; border-radius: 8px;
+         font-size: 13px; font-weight: 600; padding: 8px 16px; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: #2563eb; }
+  .session-badge { font-size: 11px; color: var(--green);
+                   background: #0f291a; border: 1px solid #14532d;
+                   padding: 3px 10px; border-radius: 20px; display: none; }
+
+  .panels { display: flex; gap: 1px; flex: 1; background: var(--border); overflow: hidden; }
+  .panel  { flex: 1; background: var(--surface); display: flex; flex-direction: column;
+            min-height: 0; }
+  .panel-header { padding: 12px 16px; border-bottom: 1px solid var(--border);
+                  display: flex; align-items: center; gap: 8px; }
+  .speaker-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .panel-title { font-size: 14px; font-weight: 700; }
+  .panel-lang  { font-size: 11px; color: var(--muted); margin-left: auto; }
+
+  .transcript-area { flex: 1; padding: 14px 16px; overflow-y: auto;
+                     display: flex; flex-direction: column; gap: 10px; }
+  .bubble { border-radius: 10px; padding: 10px 14px; max-width: 90%; font-size: 13px; line-height: 1.6; }
+  .bubble-src  { background: #0f1e33; align-self: flex-start; }
+  .bubble-tgt  { background: #0f2d1f; align-self: flex-end; color: var(--green); }
+  .bubble-label { font-size: 10px; color: var(--muted); margin-bottom: 4px; }
+  .bubble-text  { font-size: 13px; }
+  .bubble-lat   { font-size: 10px; color: var(--muted); margin-top: 4px; text-align: right; }
+  .empty-state  { flex: 1; display: flex; align-items: center; justify-content: center;
+                  color: var(--muted); font-size: 12px; text-align: center; }
+
+  .controls { padding: 12px 16px; border-top: 1px solid var(--border);
+              display: flex; align-items: center; gap: 10px; }
+  .record-btn { width: 52px; height: 52px; border-radius: 50%; border: none; cursor: pointer;
+                display: flex; align-items: center; justify-content: center;
+                font-size: 20px; transition: all 0.15s; flex-shrink: 0; }
+  .record-btn.idle     { background: #1e3a5f; }
+  .record-btn.idle:hover { background: #2563eb; }
+  .record-btn.recording { background: #7f1d1d; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+                     50% { box-shadow: 0 0 0 8px rgba(239,68,68,0); } }
+  .record-label { font-size: 11px; color: var(--muted); }
+  .spinner { display: none; width: 18px; height: 18px; border: 2px solid var(--border);
+             border-top-color: var(--accent); border-radius: 50%;
+             animation: spin 0.7s linear infinite; margin-left: auto; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error-bar { background: #3b0000; border-top: 1px solid #7f1d1d; padding: 8px 16px;
+               font-size: 12px; color: #fca5a5; display: none; }
+
+  audio { display: block; width: 100%; margin-top: 6px; height: 28px; }
+</style>
+</head>
+<body>
+
+<header>
+  <span style="font-size:24px">🇮🇳</span>
+  <div>
+    <h1>Sarvam Translation PoC</h1>
+    <p>ASR → NMT → TTS · Cross-Language Detection Architecture · Saaras v3 + Sarvam-Translate + Bulbul v3</p>
+  </div>
+</header>
+
+<div class="setup-bar">
+  <span style="font-size:12px;color:var(--muted)">Session auto-starts on first recording · Language detected from audio</span>
+  <div class="session-badge" id="session-badge">Session Active</div>
+  <span style="margin-left:auto; font-size:11px; color:var(--muted)">
+    Mode: <strong style="color:var(--subtle)">Turn-by-Turn</strong>
+  </span>
+</div>
+
+<div class="panels">
+  <!-- Speaker A Panel -->
+  <div class="panel" id="panel-a">
+    <div class="panel-header">
+      <div class="speaker-dot" style="background:var(--a-col)"></div>
+      <span class="panel-title" style="color:var(--a-col)">Speaker A</span>
+      <span class="panel-lang" id="lang-a-label">Auto-detecting language…</span>
+    </div>
+    <div class="transcript-area" id="transcript-a">
+      <div class="empty-state">Press 🎙 to start speaking</div>
+    </div>
+    <div class="controls">
+      <button class="record-btn idle" id="rec-a" onclick="toggleRecord('a')" title="Hold to speak">🎙</button>
+      <div>
+        <div class="record-label" id="rec-label-a">Press to record</div>
+      </div>
+      <div class="spinner" id="spin-a"></div>
+    </div>
+  </div>
+
+  <!-- Speaker B Panel -->
+  <div class="panel" id="panel-b">
+    <div class="panel-header">
+      <div class="speaker-dot" style="background:var(--b-col)"></div>
+      <span class="panel-title" style="color:var(--b-col)">Speaker B</span>
+      <span class="panel-lang" id="lang-b-label">Auto-detecting language…</span>
+    </div>
+    <div class="transcript-area" id="transcript-b">
+      <div class="empty-state">Press 🎙 to start speaking</div>
+    </div>
+    <div class="controls">
+      <button class="record-btn idle" id="rec-b" onclick="toggleRecord('b')" title="Hold to speak">🎙</button>
+      <div>
+        <div class="record-label" id="rec-label-b">Press to record</div>
+      </div>
+      <div class="spinner" id="spin-b"></div>
+    </div>
+  </div>
+</div>
+
+<div class="error-bar" id="error-bar"></div>
+
+<script>
+// ── Language options ────────────────────────────────────────────────────────
+const LANGUAGES = [
+  {code:"hi-IN", label:"Hindi · हिन्दी"},
+  {code:"ta-IN", label:"Tamil · தமிழ்"},
+  {code:"te-IN", label:"Telugu · తెలుగు"},
+  {code:"bn-IN", label:"Bengali · বাংলা"},
+  {code:"mr-IN", label:"Marathi · मराठी"},
+  {code:"gu-IN", label:"Gujarati · ગુજરાતી"},
+  {code:"kn-IN", label:"Kannada · ಕನ್ನಡ"},
+  {code:"ml-IN", label:"Malayalam · മലയാളം"},
+  {code:"pa-IN", label:"Punjabi · ਪੰਜਾਬੀ"},
+  {code:"od-IN", label:"Odia · ଓଡ଼ିଆ"},
+  {code:"en-IN", label:"English (Indian)"},
+];
+
+// ── Session state ───────────────────────────────────────────────────────────
+let sessionId = null;
+let mediaRecorders = {a: null, b: null};
+let isRecording = {a: false, b: false};
+
+function showError(msg) {
+  const bar = document.getElementById("error-bar");
+  bar.textContent = "⚠ " + msg;
+  bar.style.display = "block";
+  setTimeout(() => { bar.style.display = "none"; }, 5000);
+}
+
+// ── Recording ───────────────────────────────────────────────────────────────
+async function ensureSession() {
+  // Auto-create a session the first time anyone hits record.
+  // No manual "Start Session" click required — ASR detects language automatically.
+  if (sessionId) return;   // already exists, nothing to do
+
+  const form = new FormData();
+  // Pass null for both languages — ASR will detect them from the audio.
+  // The session just needs to exist so the server can track state across turns.
+  form.append("lang_a", "");
+  form.append("lang_b", "");
+
+  const resp  = await fetch("/session/create", { method: "POST", body: form });
+  const data  = await resp.json();
+  sessionId   = data.session_id;
+
+  // Show a quiet status badge so the user knows the system is live
+  const badge = document.getElementById("session-badge");
+  badge.style.display  = "inline";
+  badge.textContent    = "Session active";
+}
+
+async function toggleRecord(speaker) {
+  // Auto-create session silently on first press — no blocking error
+  await ensureSession();
+
+  if (isRecording[speaker]) {
+    // Stop recording
+    mediaRecorders[speaker]?.stop();
+  } else {
+    // Start recording
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    const chunks = [];
+    const recorder = new MediaRecorder(stream, {mimeType:"audio/webm"});
+    mediaRecorders[speaker] = recorder;
+
+    recorder.ondataavailable = e => chunks.push(e.data);
+    recorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(chunks, {type:"audio/webm"});
+      await sendAudio(speaker, blob);
+    };
+
+    recorder.start();
+    isRecording[speaker] = true;
+    const btn = document.getElementById(`rec-${speaker}`);
+    btn.className = "record-btn recording";
+    btn.textContent = "⏹";
+    document.getElementById(`rec-label-${speaker}`).textContent = "Recording… click to stop";
+  }
+}
+
+// Called when recorder stops
+async function sendAudio(speaker, blob) {
+  isRecording[speaker] = false;
+  const btn = document.getElementById(`rec-${speaker}`);
+  btn.className = "record-btn idle";
+  btn.textContent = "🎙";
+  document.getElementById(`rec-label-${speaker}`).textContent = "Translating…";
+
+  const spin = document.getElementById(`spin-${speaker}`);
+  spin.style.display = "block";
+
+  const form = new FormData();
+  form.append("audio", blob, "audio.webm");
+  form.append("session_id", sessionId);
+
+  const endpoint = speaker === "a" ? "/translate/speaker_a" : "/translate/speaker_b";
+  const otherSpeaker = speaker === "a" ? "b" : "a";
+
+  try {
+    const resp = await fetch(endpoint, {method:"POST", body:form});
+    const data = await resp.json();
+
+    if (data.status === "buffered") {
+      addBubble(speaker, "— (waiting for other speaker's language detection)", "", null, null);
+      return;
+    }
+
+    if (data.transcript || data.translation) {
+      // Update the panel header to show the detected language
+      const langLabel = LANGUAGES.find(l => l.code === data.src_language)?.label || data.src_language;
+      document.getElementById(`lang-${speaker}-label`).textContent = langLabel;
+
+      // Show source transcript in THIS speaker's panel
+      addBubble(speaker, data.transcript, data.src_language, null, data.total_latency_ms);
+      // Show translation + audio in the OTHER speaker's panel (they hear it)
+      addBubble(otherSpeaker, data.translation, data.tgt_language, data.audio_b64, null);
+    }
+  } catch(e) {
+    showError(e.message);
+  } finally {
+    spin.style.display = "none";
+    document.getElementById(`rec-label-${speaker}`).textContent = "Press to record";
+  }
+}
+
+function addBubble(speaker, text, lang, audiob64, latency) {
+  const area = document.getElementById(`transcript-${speaker}`);
+
+  // Remove empty state on first message
+  const empty = area.querySelector(".empty-state");
+  if (empty) empty.remove();
+
+  const isTranslation = !!audiob64;
+  const div = document.createElement("div");
+  div.className = `bubble ${isTranslation ? "bubble-tgt" : "bubble-src"}`;
+
+  const langCode = lang ? `<div class="bubble-label">${lang}${isTranslation ? " · translated" : " · original"}</div>` : "";
+  const latText  = latency ? `<div class="bubble-lat">${latency}ms</div>` : "";
+  const audioTag = audiob64 ? `<audio controls src="data:audio/mp3;base64,${audiob64}"></audio>` : "";
+
+  div.innerHTML = `${langCode}<div class="bubble-text">${text || "—"}</div>${latText}${audioTag}`;
+  area.appendChild(div);
+  area.scrollTop = area.scrollHeight;
+}
+</script>
+</body>
+</html>
