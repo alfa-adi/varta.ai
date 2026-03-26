@@ -380,9 +380,9 @@ async def translate_speaker_a(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    update_pipeline_state(session_id, pipeline)
     if result is None:
         return JSONResponse({"status": "buffered", "message": "Waiting for Speaker B language detection"})
-    update_pipeline_state(session_id, pipeline)
 
     log_translation(
         session_id = session_id,
@@ -419,10 +419,9 @@ async def translate_speaker_b(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    update_pipeline_state(session_id, pipeline)
     if result is None:
         return JSONResponse({"status": "buffered", "message": "Waiting for Speaker A language detection"})
-    
-    update_pipeline_state(session_id, pipeline)
 
     log_translation(
         session_id = session_id,
