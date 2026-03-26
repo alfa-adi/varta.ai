@@ -17,6 +17,8 @@ __pycache__/
 output.txt
 *.log
 *.sqlite3
+tests/output/
+tests/*_output.txt
 
 # C extensions
 *.so

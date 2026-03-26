@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -48,30 +48,184 @@ _tts = SarvamTTSAdapter(API_KEY)
 
 # In-memory session store: session_id → DualPipeline instance
 # Each session has its own SessionState (detected languages per speaker)
-_sessions: dict[str, DualPipeline] = {}
+# ── Session Store ────────────────────────────────────────────
+REDIS_URL = os.getenv("REDIS_URL")
+SESSION_TTL = 60 * 60 * 2   # 2 hours in seconds
+
+_local_sessions: dict[str, dict] = {}
+
+_redis = None
+if REDIS_URL:
+    try:
+        import redis as redis_lib
+        _redis = redis_lib.from_url(REDIS_URL, decode_responses=True)
+        _redis.ping()
+        print("  Redis connected — sessions persist across restarts")
+    except Exception as e:
+        print(f"  Redis connection failed ({e}) — falling back to in-memory")
+        _redis = None
+else:
+    print("  No REDIS_URL — using in-memory sessions (local mode)")
+
+# ── MongoDB Logging ───────────────────────────────────────────
+# What this block does:
+# 1. Tries to connect to MongoDB using the URL from your .env file
+# 2. If MongoDB is available — logs translation metadata after each call
+# 3. If MongoDB is not available — skips logging silently
+#    Logging is always optional — its failure never affects translations
+
+MONGO_URL    = os.getenv("MONGO_URL")
+MONGO_DB     = os.getenv("MONGO_DB_NAME", "varta_logs")
+
+_mongo = None   # the database handle — None means logging is disabled
+
+if MONGO_URL:
+    try:
+        from pymongo import MongoClient
+        from datetime import datetime
+        _mongo_client = MongoClient(MONGO_URL, serverSelectionTimeoutMS=3000)
+        _mongo_client.server_info()   # fail fast if connection is broken
+        _mongo = _mongo_client[MONGO_DB]
+        print("✅  MongoDB connected — conversation logs enabled")
+    except Exception as e:
+        print(f"⚠️   MongoDB failed ({e}) — logging disabled")
+        _mongo = None
+else:
+    print("ℹ️   No MONGO_URL — logging disabled (local mode)")
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+
+# get_remote_address reads the caller's IP from the incoming request
+# This is the "key" — one counter per IP address per time window
+limiter = Limiter(key_func=get_remote_address, default_limits=["15/minute"])
 
 app = FastAPI(title="Sarvam Translation PoC", version="0.1.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+from fastapi.middleware.cors import CORSMiddleware
+
+# ALLOWED_ORIGINS in your .env controls which websites can call this API
+# Default is localhost:8000 for local development
+# On Render, set ALLOWED_ORIGINS=https://your-frontend-domain.com
+# Multiple origins: ALLOWED_ORIGINS=https://site1.com,https://site2.com
+allowed_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:8000,http://localhost:3000"
+).split(",")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins     = allowed_origins,
+    allow_methods     = ["GET", "POST"],
+    allow_headers     = ["*"],
+    allow_credentials = False,
+)
 
 # Serve static files (index.html, app.js)
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+# ── Session functions ─────────────────────────────────────────────────────────
+# These four functions are the ONLY things that touch Redis or _local_sessions.
+# Everything else in the file calls these functions — never Redis directly.
+# This means if you ever switch from Redis to something else,
+# you only change these four functions, nothing else.
 
+def save_session(session_id: str, lang_a, lang_b):
+    # Converts {"lang_a": "hi-IN", "lang_b": "ta-IN"} into a string
+    # because Redis can only store strings, not Python objects
+    data = json.dumps({"lang_a": lang_a, "lang_b": lang_b})
+
+    if _redis:
+        # setex = "set with expiry"
+        # saves the string to Redis and marks it to auto-delete after SESSION_TTL
+        _redis.setex(f"session:{session_id}", SESSION_TTL, data)
+    else:
+        # No Redis — save to the in-memory dict instead
+        _local_sessions[session_id] = {"lang_a": lang_a, "lang_b": lang_b}
+
+
+def load_session(session_id: str):
+    if _redis:
+        raw = _redis.get(f"session:{session_id}")
+        # json.loads converts the string back into a Python dict
+        # if raw is None (session expired or never existed), return None
+        return json.loads(raw) if raw else None
+    else:
+        return _local_sessions.get(session_id)
+
+
+def get_pipeline(session_id: str):
+    # Load the two language codes from storage
+    state = load_session(session_id)
+    if state is None:
+        return None
+
+    # Rebuild the full pipeline object from those two language codes
+    # We can't store the pipeline object itself in Redis — it's a complex
+    # Python object with network connections inside it, not a simple string.
+    # But rebuilding it from two language codes takes microseconds.
+    return DualPipeline(
+        asr            = _asr,
+        nmt            = _nmt,
+        tts            = _tts,
+        initial_lang_a = state.get("lang_a"),
+        initial_lang_b = state.get("lang_b"),
+    )
+
+
+def update_pipeline_state(session_id: str, pipeline: DualPipeline):
+    # After a translation runs, the ASR may have detected a language
+    # that wasn't known before. Save those updated values back to Redis
+    # so the next request starts with the correct language codes.
+    save_session(
+        session_id,
+        pipeline.state.lang_a,
+        pipeline.state.lang_b,
+    )
+def log_translation(
+    session_id: str,
+    endpoint:   str,
+    src_lang:   str,
+    tgt_lang:   str,
+    latency_ms: int,
+    char_count: int,
+):
+    # Fire-and-forget — if this fails for any reason,
+    # the exception is swallowed silently.
+    # MongoDB being down must never surface as a 500 error.
+    if _mongo is None:
+        return   # logging disabled — exit immediately, do nothing
+
+    try:
+        from datetime import datetime
+        _mongo["translation_logs"].insert_one({
+            "session_id":  session_id,
+            "endpoint":    endpoint,
+            "src_language": src_lang,
+            "tgt_language": tgt_lang,
+            "latency_ms":  latency_ms,
+            "char_count":  char_count,
+            "timestamp":   datetime.utcnow(),
+        })
+    except Exception:
+        pass   # silent failure — translation already completed successfully
 # ── Helper ───────────────────────────────────────────────────────────────────
 
-def _get_or_create_session(
-    session_id: str,
-    lang_a: Optional[str] = None,
-    lang_b: Optional[str] = None,
-) -> DualPipeline:
-    """Return existing session or create a new one."""
-    if session_id not in _sessions:
-        _sessions[session_id] = DualPipeline(
-            asr=_asr, nmt=_nmt, tts=_tts,
-            initial_lang_a=lang_a,
-            initial_lang_b=lang_b,
-        )
-    return _sessions[session_id]
+def _get_or_create_session(session_id, lang_a=None, lang_b=None):
+    existing = get_pipeline(session_id)
+    if existing:
+        return existing
+    # New session — save initial state and return a fresh pipeline
+    save_session(session_id, lang_a, lang_b)
+    return DualPipeline(
+        asr=_asr, nmt=_nmt, tts=_tts,
+        initial_lang_a=lang_a,
+        initial_lang_b=lang_b,
+    )
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -82,6 +236,21 @@ async def serve_ui():
     html_path = STATIC_DIR / "index.html"
     return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
 
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring."""
+    return {"status": "ok", "version": "0.1.0"}
+# ── Startup summary ───────────────────────────────────────────
+# Printed once at startup — shows connection status at a glance
+# Green = connected and working
+# Warning = fallback mode (still works, just not persistent)
+print("─" * 50)
+print("  Sarvam Translation PoC — ready")
+print(f"  Redis:   {'✅ connected' if _redis else '⚠️  in-memory fallback'}")
+print(f"  MongoDB: {'✅ connected' if _mongo is not None else '⚠️  logging disabled'}")
+print(f"  CORS:    {allowed_origins}")
+print("─" * 50)
 
 @app.post("/session/create")
 async def create_session(
@@ -94,7 +263,7 @@ async def create_session(
     from the first audio clip each speaker sends. The UI calls this automatically
     on the first record press; no manual "Start Session" step required.
     """
-    session_id = str(uuid.uuid4())[:8]
+    session_id = str(uuid.uuid4())
     # Convert empty strings to None so SessionState treats them as unknown
     _get_or_create_session(
         session_id,
@@ -131,6 +300,14 @@ async def translate_single(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    log_translation(
+        session_id = "single",
+        endpoint   = "single",
+        src_lang   = result.src_language,
+        tgt_lang   = result.tgt_language,
+        latency_ms = result.total_latency_ms,
+        char_count = len(result.source_transcript),
+    )
     return JSONResponse({
         "transcript":       result.source_transcript,
         "translation":      result.translated_text,
@@ -205,6 +382,16 @@ async def translate_speaker_a(
 
     if result is None:
         return JSONResponse({"status": "buffered", "message": "Waiting for Speaker B language detection"})
+    update_pipeline_state(session_id, pipeline)
+
+    log_translation(
+        session_id = session_id,
+        endpoint   = "speaker_a",
+        src_lang   = result.src_language,
+        tgt_lang   = result.tgt_language,
+        latency_ms = result.total_latency_ms,
+        char_count = len(result.source_transcript),
+    )
 
     return JSONResponse({
         "transcript":       result.source_transcript,
@@ -234,7 +421,17 @@ async def translate_speaker_b(
 
     if result is None:
         return JSONResponse({"status": "buffered", "message": "Waiting for Speaker A language detection"})
+    
+    update_pipeline_state(session_id, pipeline)
 
+    log_translation(
+        session_id = session_id,
+        endpoint   = "speaker_b",
+        src_lang   = result.src_language,
+        tgt_lang   = result.tgt_language,
+        latency_ms = result.total_latency_ms,
+        char_count = len(result.source_transcript),
+    )
     return JSONResponse({
         "transcript":       result.source_transcript,
         "translation":      result.translated_text,
