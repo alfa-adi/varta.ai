@@ -60,12 +60,34 @@ class SessionState:
     Tracks the detected languages across turns.
     On first turn, languages come from the UI declaration.
     After that, the ASR overrides them with detected values.
+
+    Also buffers transcripts when a speaker speaks before the other
+    speaker's language is known. Once the other speaker speaks (and
+    their language is detected), the buffered transcript can be
+    processed through NMT → TTS.
     """
     lang_a: Optional[str] = None    # Speaker A's detected language (BCP-47)
     lang_b: Optional[str] = None    # Speaker B's detected language (BCP-47)
 
+    # Buffered transcript from the first speaker who speaks before
+    # the other speaker's language is known
+    pending_transcript_a: Optional[str] = None   # Speaker A spoke, waiting for lang_b
+    pending_transcript_b: Optional[str] = None   # Speaker B spoke, waiting for lang_a
+
     def both_known(self) -> bool:
         return self.lang_a is not None and self.lang_b is not None
+
+
+@dataclass
+class SpeakerResult:
+    """
+    Result from a single-speaker turn-by-turn call.
+    Contains the speaker's own result PLUS an optional deferred result
+    for the other speaker whose transcript was buffered earlier.
+    """
+    result: Optional[PipelineResult] = None            # This speaker's translation
+    deferred_result: Optional[PipelineResult] = None   # Buffered speaker's translation (if any)
+    buffered: bool = False                              # True if this speaker's audio was buffered (no result yet)
 
 
 class DualPipeline:
@@ -77,6 +99,12 @@ class DualPipeline:
 
     Session state: tracks detected languages across turns so the cross-
     wiring (lang_a → NMT_B target, lang_b → NMT_A target) works correctly.
+
+    BUFFERING: When Speaker A speaks first (before Speaker B), the ASR
+    transcript is stored in session state. When Speaker B subsequently
+    speaks, their ASR detects lang_b, which unlocks Speaker A's buffered
+    transcript for NMT → TTS processing. Both results are returned in
+    Speaker B's response.
     """
 
     def __init__(
@@ -86,6 +114,8 @@ class DualPipeline:
         tts: BaseTTSAdapter,
         initial_lang_a: Optional[str] = None,   # From UI declaration
         initial_lang_b: Optional[str] = None,   # From UI declaration
+        pending_transcript_a: Optional[str] = None,
+        pending_transcript_b: Optional[str] = None,
     ):
         self.asr = asr
         self.nmt = nmt
@@ -95,6 +125,8 @@ class DualPipeline:
         self.state = SessionState(
             lang_a=initial_lang_a,
             lang_b=initial_lang_b,
+            pending_transcript_a=pending_transcript_a,
+            pending_transcript_b=pending_transcript_b,
         )
 
     # ── Single-direction pipeline helper ─────────────────────────────────────
@@ -159,6 +191,42 @@ class DualPipeline:
         )
 
         return result, detected_src
+
+    # ── Process a buffered transcript (NMT → TTS only, ASR already done) ──────
+
+    async def _process_buffered_transcript(
+        self,
+        transcript:   str,
+        src_language: str,
+        tgt_language: str,
+        gender:       str = "female",
+    ) -> PipelineResult:
+        """
+        Run NMT → TTS on a previously ASR'd transcript.
+        Used when a speaker's transcript was buffered because the target
+        language wasn't known yet, and has now been resolved.
+        """
+        wall_start = int(time.time() * 1000)
+
+        nmt_out = await self.nmt.translate(
+            NMTInput(text=transcript, src_language=src_language, tgt_language=tgt_language)
+        )
+        tts_out = await self.tts.synthesise(
+            TTSInput(text=nmt_out.translated_text, language=tgt_language,
+                     voice_gender=gender, audio_format="mp3")
+        )
+
+        total_ms = int(time.time() * 1000) - wall_start
+
+        return PipelineResult(
+            source_transcript = transcript,
+            translated_text   = nmt_out.translated_text,
+            audio_bytes       = tts_out.audio_bytes,
+            audio_format      = "mp3",
+            src_language      = src_language,
+            tgt_language      = tgt_language,
+            total_latency_ms  = total_ms,
+        )
 
     # ── Both speakers send audio at the same time ─────────────────────────────
 
@@ -269,12 +337,15 @@ class DualPipeline:
 
     async def process_speaker_a(
         self, audio_bytes: bytes, audio_format: str = "wav", gender: str = "female"
-    ) -> Optional[PipelineResult]:
+    ) -> SpeakerResult:
         """
         Process only Speaker A's audio.
-        Returns None if Speaker B's language hasn't been detected yet
-        (can't cross-wire without it). The result is buffered server-side.
+
+        Case 1: lang_b is UNKNOWN → ASR Speaker A, buffer the transcript, return buffered=True
+        Case 2: lang_b is KNOWN   → full ASR → NMT → TTS pipeline
+                If Speaker B had a buffered transcript, also process that and return as deferred_result
         """
+        # ASR Speaker A's audio
         asr_out = await self.asr.transcribe(
             ASRInput(audio_bytes=audio_bytes, audio_format=audio_format,
                      language_hint=self.state.lang_a)
@@ -282,9 +353,11 @@ class DualPipeline:
         self.state.lang_a = asr_out.detected_language
 
         if self.state.lang_b is None:
-            # Can't translate yet — return None and store transcript
-            return None
+            # Can't translate yet — buffer the transcript for later
+            self.state.pending_transcript_a = asr_out.transcript
+            return SpeakerResult(buffered=True)
 
+        # lang_b is known — run full pipeline for Speaker A
         nmt_out = await self.nmt.translate(
             NMTInput(text=asr_out.transcript,
                      src_language=self.state.lang_a,
@@ -295,7 +368,7 @@ class DualPipeline:
                      voice_gender=gender, audio_format="mp3")
         )
 
-        return PipelineResult(
+        result = PipelineResult(
             source_transcript = asr_out.transcript,
             translated_text   = nmt_out.translated_text,
             audio_bytes       = tts_out.audio_bytes,
@@ -305,10 +378,29 @@ class DualPipeline:
             total_latency_ms  = asr_out.latency_ms + nmt_out.latency_ms + tts_out.latency_ms,
         )
 
+        # Check if Speaker B had a buffered transcript waiting for lang_a
+        deferred = None
+        if self.state.pending_transcript_b is not None:
+            deferred = await self._process_buffered_transcript(
+                transcript   = self.state.pending_transcript_b,
+                src_language = self.state.lang_b,
+                tgt_language = self.state.lang_a,
+                gender       = gender,
+            )
+            self.state.pending_transcript_b = None  # Clear the buffer
+
+        return SpeakerResult(result=result, deferred_result=deferred)
+
     async def process_speaker_b(
         self, audio_bytes: bytes, audio_format: str = "wav", gender: str = "female"
-    ) -> Optional[PipelineResult]:
-        """Mirror of process_speaker_a for Speaker B."""
+    ) -> SpeakerResult:
+        """
+        Mirror of process_speaker_a for Speaker B.
+
+        Case 1: lang_a is UNKNOWN → ASR Speaker B, buffer the transcript, return buffered=True
+        Case 2: lang_a is KNOWN   → full ASR → NMT → TTS pipeline
+                If Speaker A had a buffered transcript, also process that and return as deferred_result
+        """
         asr_out = await self.asr.transcribe(
             ASRInput(audio_bytes=audio_bytes, audio_format=audio_format,
                      language_hint=self.state.lang_b)
@@ -316,8 +408,11 @@ class DualPipeline:
         self.state.lang_b = asr_out.detected_language
 
         if self.state.lang_a is None:
-            return None
+            # Can't translate yet — buffer the transcript for later
+            self.state.pending_transcript_b = asr_out.transcript
+            return SpeakerResult(buffered=True)
 
+        # lang_a is known — run full pipeline for Speaker B
         nmt_out = await self.nmt.translate(
             NMTInput(text=asr_out.transcript,
                      src_language=self.state.lang_b,
@@ -328,7 +423,7 @@ class DualPipeline:
                      voice_gender=gender, audio_format="mp3")
         )
 
-        return PipelineResult(
+        result = PipelineResult(
             source_transcript = asr_out.transcript,
             translated_text   = nmt_out.translated_text,
             audio_bytes       = tts_out.audio_bytes,
@@ -337,3 +432,16 @@ class DualPipeline:
             tgt_language      = self.state.lang_a,
             total_latency_ms  = asr_out.latency_ms + nmt_out.latency_ms + tts_out.latency_ms,
         )
+
+        # Check if Speaker A had a buffered transcript waiting for lang_b
+        deferred = None
+        if self.state.pending_transcript_a is not None:
+            deferred = await self._process_buffered_transcript(
+                transcript   = self.state.pending_transcript_a,
+                src_language = self.state.lang_a,
+                tgt_language = self.state.lang_b,
+                gender       = gender,
+            )
+            self.state.pending_transcript_a = None  # Clear the buffer
+
+        return SpeakerResult(result=result, deferred_result=deferred)

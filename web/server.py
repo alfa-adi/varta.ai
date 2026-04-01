@@ -134,10 +134,15 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 # This means if you ever switch from Redis to something else,
 # you only change these four functions, nothing else.
 
-def save_session(session_id: str, lang_a, lang_b):
-    # Converts {"lang_a": "hi-IN", "lang_b": "ta-IN"} into a string
+def save_session(session_id: str, lang_a, lang_b, pending_a=None, pending_b=None):
+    # Converts session data into a string
     # because Redis can only store strings, not Python objects
-    data = json.dumps({"lang_a": lang_a, "lang_b": lang_b})
+    data = json.dumps({
+        "lang_a": lang_a,
+        "lang_b": lang_b,
+        "pending_transcript_a": pending_a,
+        "pending_transcript_b": pending_b,
+    })
 
     if _redis:
         # setex = "set with expiry"
@@ -145,7 +150,12 @@ def save_session(session_id: str, lang_a, lang_b):
         _redis.setex(f"session:{session_id}", SESSION_TTL, data)
     else:
         # No Redis — save to the in-memory dict instead
-        _local_sessions[session_id] = {"lang_a": lang_a, "lang_b": lang_b}
+        _local_sessions[session_id] = {
+            "lang_a": lang_a,
+            "lang_b": lang_b,
+            "pending_transcript_a": pending_a,
+            "pending_transcript_b": pending_b,
+        }
 
 
 def load_session(session_id: str):
@@ -159,32 +169,37 @@ def load_session(session_id: str):
 
 
 def get_pipeline(session_id: str):
-    # Load the two language codes from storage
+    # Load the session state from storage
     state = load_session(session_id)
     if state is None:
         return None
 
-    # Rebuild the full pipeline object from those two language codes
+    # Rebuild the full pipeline object from saved state
     # We can't store the pipeline object itself in Redis — it's a complex
     # Python object with network connections inside it, not a simple string.
-    # But rebuilding it from two language codes takes microseconds.
+    # But rebuilding it from saved state takes microseconds.
     return DualPipeline(
-        asr            = _asr,
-        nmt            = _nmt,
-        tts            = _tts,
-        initial_lang_a = state.get("lang_a"),
-        initial_lang_b = state.get("lang_b"),
+        asr                  = _asr,
+        nmt                  = _nmt,
+        tts                  = _tts,
+        initial_lang_a       = state.get("lang_a"),
+        initial_lang_b       = state.get("lang_b"),
+        pending_transcript_a = state.get("pending_transcript_a"),
+        pending_transcript_b = state.get("pending_transcript_b"),
     )
 
 
 def update_pipeline_state(session_id: str, pipeline: DualPipeline):
     # After a translation runs, the ASR may have detected a language
-    # that wasn't known before. Save those updated values back to Redis
+    # that wasn't known before. Save those updated values back to storage
     # so the next request starts with the correct language codes.
+    # Also persist any pending (buffered) transcripts.
     save_session(
         session_id,
         pipeline.state.lang_a,
         pipeline.state.lang_b,
+        pending_a=pipeline.state.pending_transcript_a,
+        pending_b=pipeline.state.pending_transcript_b,
     )
 def log_translation(
     session_id: str,
@@ -376,14 +391,16 @@ async def translate_speaker_a(
     pipeline = _get_or_create_session(session_id)
 
     try:
-        result = await pipeline.process_speaker_a(audio_bytes, audio_format=ext)
+        speaker_result = await pipeline.process_speaker_a(audio_bytes, audio_format=ext)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
     update_pipeline_state(session_id, pipeline)
-    if result is None:
+
+    if speaker_result.buffered:
         return JSONResponse({"status": "buffered", "message": "Waiting for Speaker B language detection"})
 
+    result = speaker_result.result
     log_translation(
         session_id = session_id,
         endpoint   = "speaker_a",
@@ -393,7 +410,7 @@ async def translate_speaker_a(
         char_count = len(result.source_transcript),
     )
 
-    return JSONResponse({
+    response_data = {
         "transcript":       result.source_transcript,
         "translation":      result.translated_text,
         "src_language":     result.src_language,
@@ -401,7 +418,31 @@ async def translate_speaker_a(
         "audio_b64":        base64.b64encode(result.audio_bytes).decode(),
         "audio_format":     result.audio_format,
         "total_latency_ms": result.total_latency_ms,
-    })
+    }
+
+    # If Speaker B had a buffered transcript, include the deferred result
+    if speaker_result.deferred_result:
+        dr = speaker_result.deferred_result
+        response_data["deferred"] = {
+            "speaker":          "b",
+            "transcript":       dr.source_transcript,
+            "translation":      dr.translated_text,
+            "src_language":     dr.src_language,
+            "tgt_language":     dr.tgt_language,
+            "audio_b64":        base64.b64encode(dr.audio_bytes).decode(),
+            "audio_format":     dr.audio_format,
+            "total_latency_ms": dr.total_latency_ms,
+        }
+        log_translation(
+            session_id = session_id,
+            endpoint   = "speaker_b_deferred",
+            src_lang   = dr.src_language,
+            tgt_lang   = dr.tgt_language,
+            latency_ms = dr.total_latency_ms,
+            char_count = len(dr.source_transcript),
+        )
+
+    return JSONResponse(response_data)
 
 
 @app.post("/translate/speaker_b")
@@ -415,14 +456,16 @@ async def translate_speaker_b(
     pipeline = _get_or_create_session(session_id)
 
     try:
-        result = await pipeline.process_speaker_b(audio_bytes, audio_format=ext)
+        speaker_result = await pipeline.process_speaker_b(audio_bytes, audio_format=ext)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
     update_pipeline_state(session_id, pipeline)
-    if result is None:
+
+    if speaker_result.buffered:
         return JSONResponse({"status": "buffered", "message": "Waiting for Speaker A language detection"})
 
+    result = speaker_result.result
     log_translation(
         session_id = session_id,
         endpoint   = "speaker_b",
@@ -431,7 +474,8 @@ async def translate_speaker_b(
         latency_ms = result.total_latency_ms,
         char_count = len(result.source_transcript),
     )
-    return JSONResponse({
+
+    response_data = {
         "transcript":       result.source_transcript,
         "translation":      result.translated_text,
         "src_language":     result.src_language,
@@ -439,7 +483,31 @@ async def translate_speaker_b(
         "audio_b64":        base64.b64encode(result.audio_bytes).decode(),
         "audio_format":     result.audio_format,
         "total_latency_ms": result.total_latency_ms,
-    })
+    }
+
+    # If Speaker A had a buffered transcript, include the deferred result
+    if speaker_result.deferred_result:
+        dr = speaker_result.deferred_result
+        response_data["deferred"] = {
+            "speaker":          "a",
+            "transcript":       dr.source_transcript,
+            "translation":      dr.translated_text,
+            "src_language":     dr.src_language,
+            "tgt_language":     dr.tgt_language,
+            "audio_b64":        base64.b64encode(dr.audio_bytes).decode(),
+            "audio_format":     dr.audio_format,
+            "total_latency_ms": dr.total_latency_ms,
+        }
+        log_translation(
+            session_id = session_id,
+            endpoint   = "speaker_a_deferred",
+            src_lang   = dr.src_language,
+            tgt_lang   = dr.tgt_language,
+            latency_ms = dr.total_latency_ms,
+            char_count = len(dr.source_transcript),
+        )
+
+    return JSONResponse(response_data)
 
 
 # ── Run ───────────────────────────────────────────────────────────────────────

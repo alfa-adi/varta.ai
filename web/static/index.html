@@ -252,6 +252,32 @@ async function sendAudio(speaker, blob) {
       // Show translation + audio in the OTHER speaker's panel (they hear it)
       addBubble(otherSpeaker, data.translation, data.tgt_language, data.audio_b64, null);
     }
+
+    // Handle deferred result — the OTHER speaker's buffered transcript
+    // was processed now that this speaker's language was detected
+    if (data.deferred) {
+      const d = data.deferred;
+      const deferredSpeaker = d.speaker;  // "a" or "b"
+      const deferredOther   = deferredSpeaker === "a" ? "b" : "a";
+
+      // Update the deferred speaker's language label
+      const dLangLabel = LANGUAGES.find(l => l.code === d.src_language)?.label || d.src_language;
+      document.getElementById(`lang-${deferredSpeaker}-label`).textContent = dLangLabel;
+
+      // Remove the "waiting" placeholder bubble if it exists
+      const deferredArea = document.getElementById(`transcript-${deferredSpeaker}`);
+      const waitingBubbles = deferredArea.querySelectorAll('.bubble-src');
+      waitingBubbles.forEach(b => {
+        if (b.querySelector('.bubble-text')?.textContent?.includes('waiting for other speaker')) {
+          b.remove();
+        }
+      });
+
+      // Show the deferred speaker's original transcript in their panel
+      addBubble(deferredSpeaker, d.transcript, d.src_language, null, d.total_latency_ms);
+      // Show translation + audio in the OTHER panel (they hear it)
+      addBubble(deferredOther, d.translation, d.tgt_language, d.audio_b64, null);
+    }
   } catch(e) {
     showError(e.message);
   } finally {
