@@ -67,8 +67,7 @@ coverage.xml
 .pytest_cache/
 cover/
 .test.ps1
-.
-dev.ps1
+.dev.ps1
 # Jupyter Notebook
 .ipynb_checkpoints
 
