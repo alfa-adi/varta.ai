@@ -73,6 +73,26 @@
                font-size: 12px; color: #fca5a5; display: none; }
 
   audio { display: block; width: 100%; margin-top: 6px; height: 28px; }
+
+  /* ── Timing Panel Styles ─────────────────────────────────────── */
+  .timing-panel { margin-top: 8px; border: 1px solid var(--border); border-radius: 8px;
+                  overflow: hidden; font-size: 11px; }
+  .timing-header { padding: 6px 10px; background: #0a1422; cursor: pointer;
+                   display: flex; align-items: center; gap: 6px; user-select: none; }
+  .timing-header:hover { background: #0f1a2e; }
+  .timing-chevron { transition: transform 0.2s; font-size: 10px; }
+  .timing-chevron.open { transform: rotate(90deg); }
+  .timing-total { color: var(--amber); font-weight: 700; font-size: 12px; }
+  .timing-body { display: none; padding: 8px 10px; background: #080e1a; }
+  .timing-body.open { display: block; }
+  .timing-section { margin-bottom: 6px; }
+  .timing-section-label { font-size: 10px; color: var(--muted); margin-bottom: 3px;
+                          text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+  .timing-row { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+  .timing-label { width: 55px; color: var(--subtle); font-size: 10px; text-align: right; flex-shrink: 0; }
+  .timing-bar-bg { flex: 1; height: 10px; background: #111827; border-radius: 3px; overflow: hidden; }
+  .timing-bar { height: 100%; border-radius: 3px; min-width: 2px; transition: width 0.3s; }
+  .timing-val { width: 45px; color: var(--subtle); font-size: 10px; text-align: left; flex-shrink: 0; }
 </style>
 </head>
 <body>
@@ -163,6 +183,115 @@ function showError(msg) {
   setTimeout(() => { bar.style.display = "none"; }, 5000);
 }
 
+// ── Timing Panel ────────────────────────────────────────────────────────────
+
+function createTimingPanel(timing) {
+  if (!timing) return null;
+
+  const panel = document.createElement("div");
+  panel.className = "timing-panel";
+
+  const serverTotal = timing.server?.total_ms || 0;
+  const browserTotal = timing.browser?.total_ms || 0;
+  const displayTotal = browserTotal || serverTotal;
+
+  // Header (collapsed view)
+  const header = document.createElement("div");
+  header.className = "timing-header";
+  header.innerHTML = `<span class="timing-chevron">▶</span>
+    <span style="color:var(--muted)">Latency</span>
+    <span class="timing-total">${displayTotal}ms</span>`;
+
+  // Body (expanded view)
+  const body = document.createElement("div");
+  body.className = "timing-body";
+
+  // Reference for bar widths — use the largest total as 100%
+  const maxMs = Math.max(displayTotal, 1);
+
+  function makeRow(label, ms, color) {
+    const pct = Math.min((ms / maxMs) * 100, 100);
+    return `<div class="timing-row">
+      <span class="timing-label">${label}</span>
+      <div class="timing-bar-bg"><div class="timing-bar" style="width:${pct}%;background:${color}"></div></div>
+      <span class="timing-val">${ms}ms</span>
+    </div>`;
+  }
+
+  let html = '';
+
+  // Browser section
+  if (timing.browser && timing.browser.total_ms) {
+    const b = timing.browser;
+    html += `<div class="timing-section">
+      <div class="timing-section-label">Browser</div>
+      ${makeRow("upload", b.upload_ms || 0, "#3b82f6")}
+      ${makeRow("wait", b.server_wait_ms || 0, "#3b82f6")}
+      ${makeRow("parse", b.parse_ms || 0, "#3b82f6")}
+      ${makeRow("decode", b.audio_decode_ms || 0, "#3b82f6")}
+    </div>`;
+  }
+
+  // Server overhead section
+  if (timing.server) {
+    const s = timing.server;
+    html += `<div class="timing-section">
+      <div class="timing-section-label">Server</div>
+      ${makeRow("session", s.session_load_ms || 0, "#1D9E75")}
+      ${makeRow("build", s.pipeline_build_ms || 0, "#1D9E75")}
+      ${makeRow("response", s.response_build_ms || 0, "#1D9E75")}
+      ${makeRow("save", s.state_save_ms || 0, "#1D9E75")}
+      ${makeRow("log", s.log_write_ms || 0, "#1D9E75")}
+    </div>`;
+  }
+
+  // ASR section
+  if (timing.asr) {
+    const a = timing.asr;
+    html += `<div class="timing-section">
+      <div class="timing-section-label">ASR · Saaras v3</div>
+      ${makeRow("tcp", a.tcp_ms || 0, "#AFA9EC")}
+      ${makeRow("api", a.api_ms || 0, "#7F77DD")}
+      ${makeRow("parse", a.parse_ms || 0, "#534AB7")}
+    </div>`;
+  }
+
+  // NMT section
+  if (timing.nmt) {
+    const n = timing.nmt;
+    html += `<div class="timing-section">
+      <div class="timing-section-label">NMT · Sarvam-Translate</div>
+      ${makeRow("tcp", n.tcp_ms || 0, "#AFA9EC")}
+      ${makeRow("api", n.api_ms || 0, "#7F77DD")}
+      ${makeRow("parse", n.parse_ms || 0, "#534AB7")}
+    </div>`;
+  }
+
+  // TTS section
+  if (timing.tts) {
+    const t = timing.tts;
+    html += `<div class="timing-section">
+      <div class="timing-section-label">TTS · Bulbul v3</div>
+      ${makeRow("tcp", t.tcp_ms || 0, "#AFA9EC")}
+      ${makeRow("api", t.api_ms || 0, "#7F77DD")}
+      ${makeRow("parse", t.parse_ms || 0, "#534AB7")}
+    </div>`;
+  }
+
+  body.innerHTML = html;
+
+  // Toggle expand/collapse
+  header.addEventListener("click", () => {
+    const chevron = header.querySelector(".timing-chevron");
+    chevron.classList.toggle("open");
+    body.classList.toggle("open");
+  });
+
+  panel.appendChild(header);
+  panel.appendChild(body);
+  return panel;
+}
+
 // ── Recording ───────────────────────────────────────────────────────────────
 async function ensureSession() {
   // Auto-create a session the first time anyone hits record.
@@ -238,12 +367,21 @@ async function sendAudio(speaker, blob) {
   const endpoint = speaker === "a" ? "/translate/speaker_a" : "/translate/speaker_b";
   const otherSpeaker = speaker === "a" ? "b" : "a";
 
+  // ── Browser-side timing ───────────────────────────────────────
+  const browserStart = performance.now();
+
   try {
+    const uploadStart = performance.now();
     const resp = await fetch(endpoint, {method:"POST", body:form});
+    const serverWaitMs = Math.round(performance.now() - uploadStart);
+    const uploadMs = Math.round(performance.now() - browserStart);
+
+    const parseStart = performance.now();
     const data = await resp.json();
+    const parseMs = Math.round(performance.now() - parseStart);
 
     if (data.status === "buffered") {
-      addBubble(speaker, "— (waiting for other speaker's language detection)", "", null, null);
+      addBubble(speaker, "— (waiting for other speaker's language detection)", "", null, null, null);
       return;
     }
 
@@ -253,9 +391,11 @@ async function sendAudio(speaker, blob) {
       document.getElementById(`lang-${speaker}-label`).textContent = langLabel;
 
       // Show source transcript in THIS speaker's panel
-      addBubble(speaker, data.transcript, data.src_language, null, data.total_latency_ms);
+      addBubble(speaker, data.transcript, data.src_language, null, data.total_latency_ms, data.timing);
+
       // Show translation + audio in the OTHER speaker's panel (they hear it)
-      addBubble(otherSpeaker, data.translation, data.tgt_language, data.audio_b64, null);
+      // Measure audio decode time via canplaythrough
+      await renderTranslationBubble(otherSpeaker, data, browserStart, uploadMs, serverWaitMs, parseMs);
     }
 
     // Handle deferred result — the OTHER speaker's buffered transcript
@@ -279,9 +419,9 @@ async function sendAudio(speaker, blob) {
       });
 
       // Show the deferred speaker's original transcript in their panel
-      addBubble(deferredSpeaker, d.transcript, d.src_language, null, d.total_latency_ms);
+      addBubble(deferredSpeaker, d.transcript, d.src_language, null, d.total_latency_ms, d.timing);
       // Show translation + audio in the OTHER panel (they hear it)
-      addBubble(deferredOther, d.translation, d.tgt_language, d.audio_b64, null);
+      addBubble(deferredOther, d.translation, d.tgt_language, d.audio_b64, null, d.timing);
     }
   } catch(e) {
     showError(e.message);
@@ -291,7 +431,72 @@ async function sendAudio(speaker, blob) {
   }
 }
 
-function addBubble(speaker, text, lang, audiob64, latency) {
+// Render a translation bubble and measure audio decode time
+async function renderTranslationBubble(speaker, data, browserStartMs, uploadMs, serverWaitMs, parseMs) {
+  return new Promise((resolve) => {
+    const decodeStart = performance.now();
+    const bubbleEl = addBubble(speaker, data.translation, data.tgt_language, data.audio_b64, null, data.timing);
+    const audioEl = bubbleEl.querySelector("audio");
+
+    if (audioEl) {
+      let resolved = false;
+      // Safety timeout — resolve after 10s if canplaythrough never fires
+      const safetyTimeout = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          console.warn("canplaythrough timeout — resolving renderTranslationBubble");
+          finalize(Math.round(performance.now() - decodeStart));
+        }
+      }, 10000);
+
+      function finalize(audioDecodeMs) {
+        const browserTotalMs = Math.round(performance.now() - browserStartMs);
+
+        // Update timing panel with browser data
+        if (data.timing) {
+          data.timing.browser = {
+            upload_ms: uploadMs,
+            server_wait_ms: serverWaitMs,
+            parse_ms: parseMs,
+            audio_decode_ms: audioDecodeMs,
+            total_ms: browserTotalMs,
+          };
+          const oldPanel = bubbleEl.querySelector('.timing-panel');
+          if (oldPanel) {
+            const newPanel = createTimingPanel(data.timing);
+            if (newPanel) oldPanel.replaceWith(newPanel);
+          }
+        }
+
+        audioEl.play().catch(e => console.error("Auto-play prevented", e));
+
+        // Fire-and-forget POST to /metrics/browser
+        const bf = new FormData();
+        bf.append("session_id", sessionId);
+        bf.append("upload_ms", uploadMs);
+        bf.append("server_wait_ms", serverWaitMs);
+        bf.append("parse_ms", parseMs);
+        bf.append("audio_decode_ms", audioDecodeMs);
+        bf.append("total_ms", browserTotalMs);
+        fetch("/metrics/browser", {method: "POST", body: bf}).catch(() => {});
+
+        resolve();
+      }
+
+      audioEl.addEventListener("canplaythrough", () => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(safetyTimeout);
+          finalize(Math.round(performance.now() - decodeStart));
+        }
+      }, { once: true });
+    } else {
+      resolve();
+    }
+  });
+}
+
+function addBubble(speaker, text, lang, audiob64, latency, timing) {
   const area = document.getElementById(`transcript-${speaker}`);
 
   // Remove empty state on first message
@@ -307,8 +512,16 @@ function addBubble(speaker, text, lang, audiob64, latency) {
   const audioTag = audiob64 ? `<audio controls src="data:audio/mp3;base64,${audiob64}"></audio>` : "";
 
   div.innerHTML = `${langCode}<div class="bubble-text">${text || "—"}</div>${latText}${audioTag}`;
+
+  // Add timing panel if available
+  if (timing) {
+    const timingPanel = createTimingPanel(timing);
+    if (timingPanel) div.appendChild(timingPanel);
+  }
+
   area.appendChild(div);
   area.scrollTop = area.scrollHeight;
+  return div;
 }
 </script>
 </body>

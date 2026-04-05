@@ -96,6 +96,22 @@ class SinglePipeline:
 
         total_ms = int(time.time() * 1000) - wall_start
 
+        # ── Collect timing from all adapters ─────────────────────────
+        timing = {
+            "asr_total_ms": asr_output.latency_ms,
+            "asr_tcp_ms":   asr_output.tcp_ms,
+            "asr_api_ms":   asr_output.api_ms,
+            "asr_parse_ms": asr_output.parse_ms,
+            "nmt_total_ms": nmt_output.latency_ms,
+            "nmt_tcp_ms":   nmt_output.tcp_ms,
+            "nmt_api_ms":   nmt_output.api_ms,
+            "nmt_parse_ms": nmt_output.parse_ms,
+            "tts_total_ms": tts_output.latency_ms,
+            "tts_tcp_ms":   tts_output.tcp_ms,
+            "tts_api_ms":   tts_output.api_ms,
+            "tts_parse_ms": tts_output.parse_ms,
+        }
+
         return PipelineResult(
             source_transcript = asr_output.transcript,
             translated_text   = nmt_output.translated_text,
@@ -104,4 +120,5 @@ class SinglePipeline:
             src_language      = asr_output.detected_language,
             tgt_language      = self.tgt_language,
             total_latency_ms  = total_ms,
+            timing            = timing,
         )

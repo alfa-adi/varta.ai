@@ -109,7 +109,23 @@ class SarvamTTSAdapter(BaseTTSAdapter):
             "enc_format":           input.audio_format,  # "mp3" | "wav" etc.
         }
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        # ── Timing hooks ─────────────────────────────────────────────
+        timing = {}
+
+        def on_request(request):
+            timing['request_sent'] = int(time.time() * 1000)
+
+        def on_response(response):
+            timing['response_received'] = int(time.time() * 1000)
+
+        async with httpx.AsyncClient(
+            timeout=30.0,
+            event_hooks={
+                'request':  [on_request],
+                'response': [on_response],
+            }
+        ) as client:
+            tcp_start = int(time.time() * 1000)
             response = await client.post(
                 SARVAM_TTS_ENDPOINT,
                 headers={
@@ -118,6 +134,8 @@ class SarvamTTSAdapter(BaseTTSAdapter):
                 },
                 json=payload,
             )
+            tcp_ms = timing.get('request_sent', tcp_start) - tcp_start
+            api_ms = timing.get('response_received', int(time.time() * 1000)) - timing.get('request_sent', tcp_start)
 
         if response.status_code >= 400:
             try:
@@ -128,13 +146,14 @@ class SarvamTTSAdapter(BaseTTSAdapter):
                 f"Sarvam TTS API error {response.status_code}: {err_body}"
             )
 
+        parse_start = int(time.time() * 1000)
         body = response.json()
-
-        latency_ms = int(time.time() * 1000) - start_ms
 
         # Sarvam returns { "audios": ["<base64string>"] }
         # We decode the base64 immediately so the caller gets raw bytes.
         raw_audio = base64.b64decode(body["audios"][0])
+
+        latency_ms = int(time.time() * 1000) - start_ms
 
         return TTSOutput(
             audio_bytes  = raw_audio,
@@ -142,4 +161,7 @@ class SarvamTTSAdapter(BaseTTSAdapter):
             language     = input.language,
             latency_ms   = latency_ms,
             model_id     = MODEL_ID,
+            tcp_ms       = tcp_ms,
+            api_ms       = api_ms,
+            parse_ms     = int(time.time() * 1000) - parse_start,
         )

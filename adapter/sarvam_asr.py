@@ -76,16 +76,36 @@ class SarvamASRAdapter(BaseASRAdapter):
 
         form_data["file"] = (audio_filename, input.audio_bytes, content_type)
 
+        # ── Timing hooks ─────────────────────────────────────────────
+        timing = {}
+
+        def on_request(request):
+            timing['request_sent'] = int(time.time() * 1000)
+
+        def on_response(response):
+            timing['response_received'] = int(time.time() * 1000)
+
         # Make the async HTTP request
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(
+            timeout=60.0,
+            event_hooks={
+                'request':  [on_request],
+                'response': [on_response],
+            }
+        ) as client:
+            tcp_start = int(time.time() * 1000)
             response = await client.post(
                 SARVAM_ASR_ENDPOINT,
                 headers={"api-subscription-key": self._api_key},
                 files=form_data,
             )
+            tcp_ms = timing.get('request_sent', tcp_start) - tcp_start
+            api_ms = timing.get('response_received', int(time.time() * 1000)) - timing.get('request_sent', tcp_start)
 
         # Raise immediately on HTTP errors so callers see clean exceptions
         response.raise_for_status()
+
+        parse_start = int(time.time() * 1000)
         body = response.json()
 
         latency_ms = int(time.time() * 1000) - start_ms
@@ -100,4 +120,7 @@ class SarvamASRAdapter(BaseASRAdapter):
             confidence        = body.get("language_confidence", 1.0),
             latency_ms        = latency_ms,
             model_id          = MODEL_ID,
+            tcp_ms            = tcp_ms,
+            api_ms            = api_ms,
+            parse_ms          = int(time.time() * 1000) - parse_start,
         )

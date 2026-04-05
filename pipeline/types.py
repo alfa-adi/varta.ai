@@ -29,6 +29,9 @@ class ASROutput:
     confidence: float           # 0.0–1.0 language detection confidence
     latency_ms: int
     model_id: str               # Which registry entry produced this
+    tcp_ms: int = 0
+    api_ms: int = 0
+    parse_ms: int = 0
 
 
 # ── NMT ──────────────────────────────────────────────────────────────────────
@@ -49,6 +52,9 @@ class NMTOutput:
     tgt_language: str
     latency_ms: int
     model_id: str
+    tcp_ms: int = 0
+    api_ms: int = 0
+    parse_ms: int = 0
 
 
 # ── TTS ──────────────────────────────────────────────────────────────────────
@@ -72,6 +78,9 @@ class TTSOutput:
     language: str
     latency_ms: int
     model_id: str
+    tcp_ms: int = 0
+    api_ms: int = 0
+    parse_ms: int = 0
 
 
 # ── Pipeline result (used by dual.py) ────────────────────────────────────────
@@ -86,3 +95,4 @@ class PipelineResult:
     src_language: str
     tgt_language: str
     total_latency_ms: int
+    timing: dict = field(default_factory=dict)

@@ -9,6 +9,8 @@ Endpoints:
   POST /translate/dual    → Both speakers simultaneously
   POST /translate/speaker_a → Speaker A's turn only
   POST /translate/speaker_b → Speaker B's turn only
+  POST /metrics/browser   → Receive browser-side timing data
+  POST /session/create    → Create a new translation session
 
 Sessions are stored in-memory (dict keyed by session_id).
 For production, use Redis. For the PoC, memory is fine.
@@ -17,6 +19,7 @@ For production, use Redis. For the PoC, memory is fine.
 import base64
 import json
 import os
+import time
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -67,17 +70,16 @@ if REDIS_URL:
 else:
     print("  No REDIS_URL — using in-memory sessions (local mode)")
 
-# ── MongoDB Logging ───────────────────────────────────────────
-# What this block does:
-# 1. Tries to connect to MongoDB using the URL from your .env file
-# 2. If MongoDB is available — logs translation metadata after each call
-# 3. If MongoDB is not available — skips logging silently
-#    Logging is always optional — its failure never affects translations
+# ── MongoDB Logging + Metrics ────────────────────────────────────────────────
+# Two databases on the same cluster:
+#   translation-data-cluste → existing translation logs (UNCHANGED)
+#   varta_metrics → new latency tracking data
 
 MONGO_URL    = os.getenv("MONGO_URL")
-MONGO_DB     = os.getenv("MONGO_DB_NAME", "varta_logs")
+MONGO_DB     = os.getenv("MONGO_DB_NAME", "translation-data-cluste")
 
-_mongo = None   # the database handle — None means logging is disabled
+_mongo         = None   # the database handle — None means logging is disabled
+_mongo_metrics = None   # latency metrics database handle
 
 if MONGO_URL:
     try:
@@ -85,13 +87,18 @@ if MONGO_URL:
         from datetime import datetime
         _mongo_client = MongoClient(MONGO_URL, serverSelectionTimeoutMS=3000)
         _mongo_client.server_info()   # fail fast if connection is broken
-        _mongo = _mongo_client[MONGO_DB]
-        print("✅  MongoDB connected — conversation logs enabled")
+        _mongo         = _mongo_client[MONGO_DB]
+        _mongo_metrics = _mongo_client["varta_metrics"]
+        print("✅  MongoDB connected")
+        print(f"    logs    → {MONGO_DB}")
+        print(f"    metrics → varta_metrics")
     except Exception as e:
         print(f"⚠️   MongoDB failed ({e}) — logging disabled")
-        _mongo = None
+        _mongo         = None
+        _mongo_metrics = None
 else:
     print("ℹ️   No MONGO_URL — logging disabled (local mode)")
+
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -201,6 +208,10 @@ def update_pipeline_state(session_id: str, pipeline: DualPipeline):
         pending_a=pipeline.state.pending_transcript_a,
         pending_b=pipeline.state.pending_transcript_b,
     )
+
+
+# ── Logging (varta_logs — UNCHANGED) ─────────────────────────────────────────
+
 def log_translation(
     session_id: str,
     endpoint:   str,
@@ -228,19 +239,129 @@ def log_translation(
         })
     except Exception:
         pass   # silent failure — translation already completed successfully
+
+
+# ── Metrics (varta_metrics — NEW) ─────────────────────────────────────────────
+
+def log_metrics(
+    session_id: str,
+    endpoint:   str,
+    timing:     dict,
+    src_lang:   str,
+    tgt_lang:   str,
+    char_count: int,
+):
+    """Write latency data to varta_metrics. Completely separate from log_translation."""
+    if _mongo_metrics is None:
+        return
+
+    try:
+        from datetime import datetime
+        now = datetime.utcnow()
+
+        # Write to request_latency collection
+        _mongo_metrics["request_latency"].insert_one({
+            "session_id": session_id,
+            "endpoint":   endpoint,
+            "timestamp":  now,
+            "browser":    timing.get("browser", {}),
+            "server":     timing.get("server", {}),
+            "asr":        timing.get("asr", {}),
+            "nmt":        timing.get("nmt", {}),
+            "tts":        timing.get("tts", {}),
+            "src_language": src_lang,
+            "tgt_language": tgt_lang,
+            "char_count":   char_count,
+        })
+
+        # Write to model_performance collection — 3 documents
+        model_entries = [
+            {
+                "session_id":   session_id,
+                "timestamp":    now,
+                "model_id":     "sarvam/saaras-v3",
+                "model_type":   "ASR",
+                "src_language": src_lang,
+                "tgt_language": tgt_lang,
+                "char_count":   char_count,
+                **timing.get("asr", {}),
+            },
+            {
+                "session_id":   session_id,
+                "timestamp":    now,
+                "model_id":     "sarvam/sarvam-translate",
+                "model_type":   "NMT",
+                "src_language": src_lang,
+                "tgt_language": tgt_lang,
+                "char_count":   char_count,
+                **timing.get("nmt", {}),
+            },
+            {
+                "session_id":   session_id,
+                "timestamp":    now,
+                "model_id":     "sarvam/bulbul-v3",
+                "model_type":   "TTS",
+                "src_language": src_lang,
+                "tgt_language": tgt_lang,
+                "char_count":   char_count,
+                **timing.get("tts", {}),
+            },
+        ]
+        _mongo_metrics["model_performance"].insert_many(model_entries)
+
+    except Exception:
+        pass   # fire-and-forget — never affect translation response
+
+
+# ── Timing helper ─────────────────────────────────────────────────────────────
+
+def _build_timing(result, server_timing):
+    """Assemble the nested timing dict from pipeline result + server-side measurements."""
+    t = result.timing if result.timing else {}
+    return {
+        "server": server_timing,
+        "asr": {
+            "total_ms": t.get("asr_total_ms", 0),
+            "tcp_ms":   t.get("asr_tcp_ms", 0),
+            "api_ms":   t.get("asr_api_ms", 0),
+            "parse_ms": t.get("asr_parse_ms", 0),
+        },
+        "nmt": {
+            "total_ms": t.get("nmt_total_ms", 0),
+            "tcp_ms":   t.get("nmt_tcp_ms", 0),
+            "api_ms":   t.get("nmt_api_ms", 0),
+            "parse_ms": t.get("nmt_parse_ms", 0),
+        },
+        "tts": {
+            "total_ms": t.get("tts_total_ms", 0),
+            "tcp_ms":   t.get("tts_tcp_ms", 0),
+            "api_ms":   t.get("tts_api_ms", 0),
+            "parse_ms": t.get("tts_parse_ms", 0),
+        },
+        "browser": {},   # populated by browser JS via /metrics/browser
+    }
+
+
 # ── Helper ───────────────────────────────────────────────────────────────────
 
 def _get_or_create_session(session_id, lang_a=None, lang_b=None):
+    t0 = int(time.time() * 1000)
     existing = get_pipeline(session_id)
+    session_load_ms = int(time.time() * 1000) - t0
+
     if existing:
-        return existing
+        return existing, session_load_ms, 0
+
     # New session — save initial state and return a fresh pipeline
     save_session(session_id, lang_a, lang_b)
-    return DualPipeline(
+    build_start = int(time.time() * 1000)
+    pipe = DualPipeline(
         asr=_asr, nmt=_nmt, tts=_tts,
         initial_lang_a=lang_a,
         initial_lang_b=lang_b,
     )
+    pipeline_build_ms = int(time.time() * 1000) - build_start
+    return pipe, session_load_ms, pipeline_build_ms
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -256,6 +377,8 @@ async def serve_ui():
 async def health_check():
     """Health check endpoint for monitoring."""
     return {"status": "ok", "version": "0.1.0"}
+
+
 # ── Startup summary ───────────────────────────────────────────
 # Printed once at startup — shows connection status at a glance
 # Green = connected and working
@@ -263,9 +386,10 @@ async def health_check():
 print("─" * 50)
 print("  Sarvam Translation PoC — ready")
 print(f"  Redis:   {'✅ connected' if _redis else '⚠️  in-memory fallback'}")
-print(f"  MongoDB: {'✅ connected' if _mongo is not None else '⚠️  logging disabled'}")
+print(f"  MongoDB: {'✅ logs + metrics' if _mongo is not None else '⚠️  disabled'}")
 print(f"  CORS:    {allowed_origins}")
 print("─" * 50)
+
 
 @app.post("/session/create")
 async def create_session(
@@ -299,6 +423,8 @@ async def translate_single(
     Upload audio, get back a JSON with transcript + translation + base64 audio.
     No session needed — stateless endpoint.
     """
+    server_start = int(time.time() * 1000)
+
     audio_bytes = await audio.read()
     ext = audio.filename.rsplit(".", 1)[-1].lower() if audio.filename else "wav"
 
@@ -315,6 +441,8 @@ async def translate_single(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    # ── Measure log_translation time ─────────────────────────────
+    log_start = int(time.time() * 1000)
     log_translation(
         session_id = "single",
         endpoint   = "single",
@@ -323,7 +451,22 @@ async def translate_single(
         latency_ms = result.total_latency_ms,
         char_count = len(result.source_transcript),
     )
-    return JSONResponse({
+    log_write_ms = int(time.time() * 1000) - log_start
+
+    # ── Build response with timing ───────────────────────────────
+    resp_start = int(time.time() * 1000)
+
+    server_timing = {
+        "total_ms":          0,   # filled below
+        "session_load_ms":   0,
+        "pipeline_build_ms": 0,
+        "response_build_ms": 0,
+        "state_save_ms":     0,
+        "log_write_ms":      log_write_ms,
+    }
+    timing = _build_timing(result, server_timing)
+
+    response_data = {
         "transcript":       result.source_transcript,
         "translation":      result.translated_text,
         "src_language":     result.src_language,
@@ -331,7 +474,27 @@ async def translate_single(
         "audio_b64":        base64.b64encode(result.audio_bytes).decode(),
         "audio_format":     result.audio_format,
         "total_latency_ms": result.total_latency_ms,
-    })
+        "timing":           timing,
+    }
+
+    response_build_ms = int(time.time() * 1000) - resp_start
+    total_server_ms = int(time.time() * 1000) - server_start
+
+    timing["server"]["response_build_ms"] = response_build_ms
+    timing["server"]["total_ms"] = total_server_ms
+
+    # ── Write metrics (fire-and-forget, after response is built) ──
+    metrics_start = int(time.time() * 1000)
+    log_metrics(
+        session_id = "single",
+        endpoint   = "single",
+        timing     = timing,
+        src_lang   = result.src_language,
+        tgt_lang   = result.tgt_language,
+        char_count = len(result.source_transcript),
+    )
+
+    return JSONResponse(response_data)
 
 
 @app.post("/translate/dual")
@@ -346,11 +509,13 @@ async def translate_dual(
     Both translations are returned together.
     Both ASR, NMT, and TTS calls run in parallel internally.
     """
+    server_start = int(time.time() * 1000)
+
     bytes_a = await audio_a.read()
     bytes_b = await audio_b.read()
     fmt_a = audio_a.filename.rsplit(".", 1)[-1].lower() if audio_a.filename else "wav"
 
-    pipeline = _get_or_create_session(session_id)
+    pipeline, session_load_ms, pipeline_build_ms = _get_or_create_session(session_id)
 
     try:
         dual_result = await pipeline.process_both(bytes_a, bytes_b, audio_format=fmt_a)
@@ -360,7 +525,23 @@ async def translate_dual(
     r_a = dual_result.for_speaker_a
     r_b = dual_result.for_speaker_b
 
-    return JSONResponse({
+    resp_start = int(time.time() * 1000)
+
+    # Build timing for both directions
+    server_timing_a = {
+        "total_ms": 0, "session_load_ms": session_load_ms,
+        "pipeline_build_ms": pipeline_build_ms, "response_build_ms": 0,
+        "state_save_ms": 0, "log_write_ms": 0,
+    }
+    server_timing_b = {
+        "total_ms": 0, "session_load_ms": session_load_ms,
+        "pipeline_build_ms": pipeline_build_ms, "response_build_ms": 0,
+        "state_save_ms": 0, "log_write_ms": 0,
+    }
+    timing_a = _build_timing(r_a, server_timing_a)
+    timing_b = _build_timing(r_b, server_timing_b)
+
+    response_data = {
         "for_speaker_a": {
             "transcript":       r_a.source_transcript,
             "translation":      r_a.translated_text,
@@ -368,6 +549,7 @@ async def translate_dual(
             "tgt_language":     r_a.tgt_language,
             "audio_b64":        base64.b64encode(r_a.audio_bytes).decode(),
             "total_latency_ms": r_a.total_latency_ms,
+            "timing":           timing_a,
         },
         "for_speaker_b": {
             "transcript":       r_b.source_transcript,
@@ -376,8 +558,27 @@ async def translate_dual(
             "tgt_language":     r_b.tgt_language,
             "audio_b64":        base64.b64encode(r_b.audio_bytes).decode(),
             "total_latency_ms": r_b.total_latency_ms,
+            "timing":           timing_b,
         },
-    })
+    }
+
+    response_build_ms = int(time.time() * 1000) - resp_start
+    total_server_ms = int(time.time() * 1000) - server_start
+
+    timing_a["server"]["response_build_ms"] = response_build_ms
+    timing_a["server"]["total_ms"] = total_server_ms
+    timing_b["server"]["response_build_ms"] = response_build_ms
+    timing_b["server"]["total_ms"] = total_server_ms
+
+    # Write metrics for both directions
+    log_metrics(session_id=session_id, endpoint="dual_a", timing=timing_a,
+                src_lang=r_a.src_language, tgt_lang=r_a.tgt_language,
+                char_count=len(r_a.source_transcript))
+    log_metrics(session_id=session_id, endpoint="dual_b", timing=timing_b,
+                src_lang=r_b.src_language, tgt_lang=r_b.tgt_language,
+                char_count=len(r_b.source_transcript))
+
+    return JSONResponse(response_data)
 
 
 @app.post("/translate/speaker_a")
@@ -386,21 +587,29 @@ async def translate_speaker_a(
     session_id: str        = Form(...),
 ):
     """Turn-by-turn: process only Speaker A's audio."""
+    server_start = int(time.time() * 1000)
+
     audio_bytes = await audio.read()
     ext = audio.filename.rsplit(".", 1)[-1].lower() if audio.filename else "wav"
-    pipeline = _get_or_create_session(session_id)
+    pipeline, session_load_ms, pipeline_build_ms = _get_or_create_session(session_id)
 
     try:
         speaker_result = await pipeline.process_speaker_a(audio_bytes, audio_format=ext)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    # ── Measure state save ────────────────────────────────────────
+    state_start = int(time.time() * 1000)
     update_pipeline_state(session_id, pipeline)
+    state_save_ms = int(time.time() * 1000) - state_start
 
     if speaker_result.buffered:
         return JSONResponse({"status": "buffered", "message": "Waiting for Speaker B language detection"})
 
     result = speaker_result.result
+
+    # ── Measure log_translation ──────────────────────────────────
+    log_start = int(time.time() * 1000)
     log_translation(
         session_id = session_id,
         endpoint   = "speaker_a",
@@ -409,6 +618,20 @@ async def translate_speaker_a(
         latency_ms = result.total_latency_ms,
         char_count = len(result.source_transcript),
     )
+    log_write_ms = int(time.time() * 1000) - log_start
+
+    # ── Build response with timing ───────────────────────────────
+    resp_start = int(time.time() * 1000)
+
+    server_timing = {
+        "total_ms":          0,
+        "session_load_ms":   session_load_ms,
+        "pipeline_build_ms": pipeline_build_ms,
+        "response_build_ms": 0,
+        "state_save_ms":     state_save_ms,
+        "log_write_ms":      log_write_ms,
+    }
+    timing = _build_timing(result, server_timing)
 
     response_data = {
         "transcript":       result.source_transcript,
@@ -418,11 +641,16 @@ async def translate_speaker_a(
         "audio_b64":        base64.b64encode(result.audio_bytes).decode(),
         "audio_format":     result.audio_format,
         "total_latency_ms": result.total_latency_ms,
+        "timing":           timing,
     }
 
     # If Speaker B had a buffered transcript, include the deferred result
     if speaker_result.deferred_result:
         dr = speaker_result.deferred_result
+        dr_timing = _build_timing(dr, {
+            "total_ms": 0, "session_load_ms": 0, "pipeline_build_ms": 0,
+            "response_build_ms": 0, "state_save_ms": 0, "log_write_ms": 0,
+        })
         response_data["deferred"] = {
             "speaker":          "b",
             "transcript":       dr.source_transcript,
@@ -432,6 +660,7 @@ async def translate_speaker_a(
             "audio_b64":        base64.b64encode(dr.audio_bytes).decode(),
             "audio_format":     dr.audio_format,
             "total_latency_ms": dr.total_latency_ms,
+            "timing":           dr_timing,
         }
         log_translation(
             session_id = session_id,
@@ -441,6 +670,30 @@ async def translate_speaker_a(
             latency_ms = dr.total_latency_ms,
             char_count = len(dr.source_transcript),
         )
+        log_metrics(
+            session_id = session_id,
+            endpoint   = "speaker_b_deferred",
+            timing     = dr_timing,
+            src_lang   = dr.src_language,
+            tgt_lang   = dr.tgt_language,
+            char_count = len(dr.source_transcript),
+        )
+
+    response_build_ms = int(time.time() * 1000) - resp_start
+    total_server_ms = int(time.time() * 1000) - server_start
+
+    timing["server"]["response_build_ms"] = response_build_ms
+    timing["server"]["total_ms"] = total_server_ms
+
+    # ── Write metrics ─────────────────────────────────────────────
+    log_metrics(
+        session_id = session_id,
+        endpoint   = "speaker_a",
+        timing     = timing,
+        src_lang   = result.src_language,
+        tgt_lang   = result.tgt_language,
+        char_count = len(result.source_transcript),
+    )
 
     return JSONResponse(response_data)
 
@@ -451,21 +704,29 @@ async def translate_speaker_b(
     session_id: str        = Form(...),
 ):
     """Turn-by-turn: process only Speaker B's audio."""
+    server_start = int(time.time() * 1000)
+
     audio_bytes = await audio.read()
     ext = audio.filename.rsplit(".", 1)[-1].lower() if audio.filename else "wav"
-    pipeline = _get_or_create_session(session_id)
+    pipeline, session_load_ms, pipeline_build_ms = _get_or_create_session(session_id)
 
     try:
         speaker_result = await pipeline.process_speaker_b(audio_bytes, audio_format=ext)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    # ── Measure state save ────────────────────────────────────────
+    state_start = int(time.time() * 1000)
     update_pipeline_state(session_id, pipeline)
+    state_save_ms = int(time.time() * 1000) - state_start
 
     if speaker_result.buffered:
         return JSONResponse({"status": "buffered", "message": "Waiting for Speaker A language detection"})
 
     result = speaker_result.result
+
+    # ── Measure log_translation ──────────────────────────────────
+    log_start = int(time.time() * 1000)
     log_translation(
         session_id = session_id,
         endpoint   = "speaker_b",
@@ -474,6 +735,20 @@ async def translate_speaker_b(
         latency_ms = result.total_latency_ms,
         char_count = len(result.source_transcript),
     )
+    log_write_ms = int(time.time() * 1000) - log_start
+
+    # ── Build response with timing ───────────────────────────────
+    resp_start = int(time.time() * 1000)
+
+    server_timing = {
+        "total_ms":          0,
+        "session_load_ms":   session_load_ms,
+        "pipeline_build_ms": pipeline_build_ms,
+        "response_build_ms": 0,
+        "state_save_ms":     state_save_ms,
+        "log_write_ms":      log_write_ms,
+    }
+    timing = _build_timing(result, server_timing)
 
     response_data = {
         "transcript":       result.source_transcript,
@@ -483,11 +758,16 @@ async def translate_speaker_b(
         "audio_b64":        base64.b64encode(result.audio_bytes).decode(),
         "audio_format":     result.audio_format,
         "total_latency_ms": result.total_latency_ms,
+        "timing":           timing,
     }
 
     # If Speaker A had a buffered transcript, include the deferred result
     if speaker_result.deferred_result:
         dr = speaker_result.deferred_result
+        dr_timing = _build_timing(dr, {
+            "total_ms": 0, "session_load_ms": 0, "pipeline_build_ms": 0,
+            "response_build_ms": 0, "state_save_ms": 0, "log_write_ms": 0,
+        })
         response_data["deferred"] = {
             "speaker":          "a",
             "transcript":       dr.source_transcript,
@@ -497,6 +777,7 @@ async def translate_speaker_b(
             "audio_b64":        base64.b64encode(dr.audio_bytes).decode(),
             "audio_format":     dr.audio_format,
             "total_latency_ms": dr.total_latency_ms,
+            "timing":           dr_timing,
         }
         log_translation(
             session_id = session_id,
@@ -506,8 +787,67 @@ async def translate_speaker_b(
             latency_ms = dr.total_latency_ms,
             char_count = len(dr.source_transcript),
         )
+        log_metrics(
+            session_id = session_id,
+            endpoint   = "speaker_a_deferred",
+            timing     = dr_timing,
+            src_lang   = dr.src_language,
+            tgt_lang   = dr.tgt_language,
+            char_count = len(dr.source_transcript),
+        )
+
+    response_build_ms = int(time.time() * 1000) - resp_start
+    total_server_ms = int(time.time() * 1000) - server_start
+
+    timing["server"]["response_build_ms"] = response_build_ms
+    timing["server"]["total_ms"] = total_server_ms
+
+    # ── Write metrics ─────────────────────────────────────────────
+    log_metrics(
+        session_id = session_id,
+        endpoint   = "speaker_b",
+        timing     = timing,
+        src_lang   = result.src_language,
+        tgt_lang   = result.tgt_language,
+        char_count = len(result.source_transcript),
+    )
 
     return JSONResponse(response_data)
+
+
+# ── Browser Metrics Endpoint ─────────────────────────────────────────────────
+
+@app.post("/metrics/browser")
+async def receive_browser_metrics(
+    session_id:      str = Form(...),
+    upload_ms:       int = Form(...),
+    server_wait_ms:  int = Form(...),
+    parse_ms:        int = Form(...),
+    audio_decode_ms: int = Form(...),
+    total_ms:        int = Form(...),
+):
+    """
+    Receive browser-side timing data and merge it into the most recent
+    request_latency document for this session.
+    Not rate-limited — this is a metrics-only endpoint.
+    """
+    if _mongo_metrics is not None:
+        try:
+            from datetime import datetime, timedelta
+            _mongo_metrics["request_latency"].update_one(
+                {"session_id": session_id,
+                 "timestamp": {"$gte": datetime.utcnow() - timedelta(minutes=1)}},
+                {"$set": {"browser": {
+                    "upload_ms":       upload_ms,
+                    "server_wait_ms":  server_wait_ms,
+                    "parse_ms":        parse_ms,
+                    "audio_decode_ms": audio_decode_ms,
+                    "total_ms":        total_ms,
+                }}},
+            )
+        except Exception:
+            pass
+    return {"status": "ok"}
 
 
 # ── Run ───────────────────────────────────────────────────────────────────────

@@ -90,6 +90,24 @@ class SpeakerResult:
     buffered: bool = False                              # True if this speaker's audio was buffered (no result yet)
 
 
+def _collect_timing(asr_out, nmt_out, tts_out):
+    """Helper: collect timing fields from adapter outputs into a flat dict."""
+    return {
+        "asr_total_ms": asr_out.latency_ms,
+        "asr_tcp_ms":   asr_out.tcp_ms,
+        "asr_api_ms":   asr_out.api_ms,
+        "asr_parse_ms": asr_out.parse_ms,
+        "nmt_total_ms": nmt_out.latency_ms,
+        "nmt_tcp_ms":   nmt_out.tcp_ms,
+        "nmt_api_ms":   nmt_out.api_ms,
+        "nmt_parse_ms": nmt_out.parse_ms,
+        "tts_total_ms": tts_out.latency_ms,
+        "tts_tcp_ms":   tts_out.tcp_ms,
+        "tts_api_ms":   tts_out.api_ms,
+        "tts_parse_ms": tts_out.parse_ms,
+    }
+
+
 class DualPipeline:
     """
     Runs two translation pipelines in parallel — one per direction.
@@ -188,6 +206,7 @@ class DualPipeline:
             src_language      = detected_src,
             tgt_language      = tgt_language,
             total_latency_ms  = total_ms,
+            timing            = _collect_timing(asr_out, nmt_out, tts_out),
         )
 
         return result, detected_src
@@ -218,6 +237,19 @@ class DualPipeline:
 
         total_ms = int(time.time() * 1000) - wall_start
 
+        # For buffered transcripts, ASR was already done (no ASR timing)
+        timing = {
+            "asr_total_ms": 0, "asr_tcp_ms": 0, "asr_api_ms": 0, "asr_parse_ms": 0,
+            "nmt_total_ms": nmt_out.latency_ms,
+            "nmt_tcp_ms":   nmt_out.tcp_ms,
+            "nmt_api_ms":   nmt_out.api_ms,
+            "nmt_parse_ms": nmt_out.parse_ms,
+            "tts_total_ms": tts_out.latency_ms,
+            "tts_tcp_ms":   tts_out.tcp_ms,
+            "tts_api_ms":   tts_out.api_ms,
+            "tts_parse_ms": tts_out.parse_ms,
+        }
+
         return PipelineResult(
             source_transcript = transcript,
             translated_text   = nmt_out.translated_text,
@@ -226,6 +258,7 @@ class DualPipeline:
             src_language      = src_language,
             tgt_language      = tgt_language,
             total_latency_ms  = total_ms,
+            timing            = timing,
         )
 
     # ── Both speakers send audio at the same time ─────────────────────────────
@@ -274,6 +307,7 @@ class DualPipeline:
             )
         )
 
+        gather_start = int(time.time() * 1000)
         asr_a_out, asr_b_out = await asyncio.gather(asr_a_task, asr_b_task)
 
         # ── PHASE 2: Cross-wire ──────────────────────────────────────────────
@@ -309,8 +343,15 @@ class DualPipeline:
         )
 
         tts_a_out, tts_b_out = await asyncio.gather(tts_a_task, tts_b_task)
+        parallel_gather_ms = int(time.time() * 1000) - gather_start
 
         # ── Assemble results ─────────────────────────────────────────────────
+        timing_a = _collect_timing(asr_a_out, nmt_a_out, tts_a_out)
+        timing_a["parallel_gather_ms"] = parallel_gather_ms
+
+        timing_b = _collect_timing(asr_b_out, nmt_b_out, tts_b_out)
+        timing_b["parallel_gather_ms"] = parallel_gather_ms
+
         for_b = PipelineResult(
             source_transcript = asr_a_out.transcript,
             translated_text   = nmt_a_out.translated_text,
@@ -319,6 +360,7 @@ class DualPipeline:
             src_language      = lang_a,
             tgt_language      = lang_b,
             total_latency_ms  = tts_a_out.latency_ms + nmt_a_out.latency_ms + asr_a_out.latency_ms,
+            timing            = timing_a,
         )
 
         for_a = PipelineResult(
@@ -329,6 +371,7 @@ class DualPipeline:
             src_language      = lang_b,
             tgt_language      = lang_a,
             total_latency_ms  = tts_b_out.latency_ms + nmt_b_out.latency_ms + asr_b_out.latency_ms,
+            timing            = timing_b,
         )
 
         return DualPipelineResult(for_speaker_b=for_b, for_speaker_a=for_a)
@@ -376,6 +419,7 @@ class DualPipeline:
             src_language      = self.state.lang_a,
             tgt_language      = self.state.lang_b,
             total_latency_ms  = asr_out.latency_ms + nmt_out.latency_ms + tts_out.latency_ms,
+            timing            = _collect_timing(asr_out, nmt_out, tts_out),
         )
 
         # Check if Speaker B had a buffered transcript waiting for lang_a
@@ -431,6 +475,7 @@ class DualPipeline:
             src_language      = self.state.lang_b,
             tgt_language      = self.state.lang_a,
             total_latency_ms  = asr_out.latency_ms + nmt_out.latency_ms + tts_out.latency_ms,
+            timing            = _collect_timing(asr_out, nmt_out, tts_out),
         )
 
         # Check if Speaker A had a buffered transcript waiting for lang_b

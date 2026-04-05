@@ -73,7 +73,23 @@ class SarvamNMTAdapter(BaseNMTAdapter):
             "enable_preprocessing": True,    # handles numerals, dates, addresses
         }
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        # ── Timing hooks ─────────────────────────────────────────────
+        timing = {}
+
+        def on_request(request):
+            timing['request_sent'] = int(time.time() * 1000)
+
+        def on_response(response):
+            timing['response_received'] = int(time.time() * 1000)
+
+        async with httpx.AsyncClient(
+            timeout=30.0,
+            event_hooks={
+                'request':  [on_request],
+                'response': [on_response],
+            }
+        ) as client:
+            tcp_start = int(time.time() * 1000)
             response = await client.post(
                 SARVAM_TRANSLATE_ENDPOINT,
                 headers={
@@ -82,6 +98,8 @@ class SarvamNMTAdapter(BaseNMTAdapter):
                 },
                 json=payload,
             )
+            tcp_ms = timing.get('request_sent', tcp_start) - tcp_start
+            api_ms = timing.get('response_received', int(time.time() * 1000)) - timing.get('request_sent', tcp_start)
 
         if response.status_code >= 400:
             # Log the error body for debugging
@@ -93,6 +111,7 @@ class SarvamNMTAdapter(BaseNMTAdapter):
                 f"Sarvam NMT API error {response.status_code}: {err_body}"
             )
 
+        parse_start = int(time.time() * 1000)
         body = response.json()
 
         latency_ms = int(time.time() * 1000) - start_ms
@@ -104,4 +123,7 @@ class SarvamNMTAdapter(BaseNMTAdapter):
             tgt_language    = input.tgt_language,
             latency_ms      = latency_ms,
             model_id        = MODEL_ID,
+            tcp_ms          = tcp_ms,
+            api_ms          = api_ms,
+            parse_ms        = int(time.time() * 1000) - parse_start,
         )
