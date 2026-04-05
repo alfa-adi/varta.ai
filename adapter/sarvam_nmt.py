@@ -76,10 +76,10 @@ class SarvamNMTAdapter(BaseNMTAdapter):
         # ── Timing hooks ─────────────────────────────────────────────
         timing = {}
 
-        def on_request(request):
+        async def on_request(request):
             timing['request_sent'] = int(time.time() * 1000)
 
-        def on_response(response):
+        async def on_response(response):
             timing['response_received'] = int(time.time() * 1000)
 
         async with httpx.AsyncClient(
