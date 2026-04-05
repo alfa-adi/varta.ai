@@ -113,7 +113,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # Multiple origins: ALLOWED_ORIGINS=https://site1.com,https://site2.com
 allowed_origins = os.getenv(
     "ALLOWED_ORIGINS",
-    "http://localhost:8000,http://localhost:3000,https://varta-ai-22b3.onrender.com"
+    "http://localhost:8000,http://localhost:3000,https://varta-ai-22b3.onrender.com,https://varta-ai-1-7wwd.onrender.com"
 ).split(",")
 
 app.add_middleware(

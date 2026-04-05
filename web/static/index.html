@@ -186,32 +186,37 @@ async function ensureSession() {
 }
 
 async function toggleRecord(speaker) {
-  // Auto-create session silently on first press — no blocking error
-  await ensureSession();
+  try {
+    // Auto-create session silently on first press — no blocking error
+    await ensureSession();
 
-  if (isRecording[speaker]) {
-    // Stop recording
-    mediaRecorders[speaker]?.stop();
-  } else {
-    // Start recording
-    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-    const chunks = [];
-    const recorder = new MediaRecorder(stream, {mimeType:"audio/webm"});
-    mediaRecorders[speaker] = recorder;
+    if (isRecording[speaker]) {
+      // Stop recording
+      mediaRecorders[speaker]?.stop();
+    } else {
+      // Start recording
+      const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+      const chunks = [];
+      const recorder = new MediaRecorder(stream, {mimeType:"audio/webm"});
+      mediaRecorders[speaker] = recorder;
 
-    recorder.ondataavailable = e => chunks.push(e.data);
-    recorder.onstop = async () => {
-      stream.getTracks().forEach(t => t.stop());
-      const blob = new Blob(chunks, {type:"audio/webm"});
-      await sendAudio(speaker, blob);
-    };
+      recorder.ondataavailable = e => chunks.push(e.data);
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        const blob = new Blob(chunks, {type:"audio/webm"});
+        await sendAudio(speaker, blob);
+      };
 
-    recorder.start();
-    isRecording[speaker] = true;
-    const btn = document.getElementById(`rec-${speaker}`);
-    btn.className = "record-btn recording";
-    btn.textContent = "⏹";
-    document.getElementById(`rec-label-${speaker}`).textContent = "Recording… click to stop";
+      recorder.start();
+      isRecording[speaker] = true;
+      const btn = document.getElementById(`rec-${speaker}`);
+      btn.className = "record-btn recording";
+      btn.textContent = "⏹";
+      document.getElementById(`rec-label-${speaker}`).textContent = "Recording… click to stop";
+    }
+  } catch(e) {
+    console.error("toggleRecord error:", e);
+    showError("Recording failed: " + e.message);
   }
 }
 
