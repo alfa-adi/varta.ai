@@ -96,6 +96,15 @@
 </style>
 </head>
 <body>
+<!-- TEST MODE banner — only visible when ?testMode=true is in the URL -->
+<div id="test-banner" style="display:none; background:#fef9c3; border-bottom:2px solid #eab308; padding:8px 16px; font-size:13px; font-family:monospace; color:#713f12; text-align:center; letter-spacing:0.04em;">
+  ⚠  TEST MODE — microphone disabled — Playwright is driving audio injection
+</div>
+<script>
+  if (new URLSearchParams(window.location.search).has('testMode')) {
+    document.getElementById('test-banner').style.display = 'block';
+  }
+</script>
 
 <header>
   <span style="font-size:24px">🇮🇳</span>
@@ -156,6 +165,44 @@
 <div class="error-bar" id="error-bar"></div>
 
 <script>
+// ─── Test mode detection ────────────────────────────────────────────────────
+// When ?testMode=true is in the URL, Playwright drives audio injection.
+// The microphone is never requested. sendAudio() is called directly.
+
+const TEST_MODE = new URLSearchParams(window.location.search).has('testMode');
+
+if (TEST_MODE) {
+  console.log('[varta] testMode active — microphone disabled, awaiting injectAudio()');
+}
+
+// ─── Playwright entry point ──────────────────────────────────────────────────
+// Playwright calls this via page.evaluate() passing a pre-recorded audio Blob.
+//
+// Usage from Playwright (Python):
+//   audio_bytes = Path("sample.webm").read_bytes()
+//   await page.evaluate(
+//       "([spk, arr]) => window.injectAudio(spk, new Blob([new Uint8Array(arr)], {type:'audio/webm'}))",
+//       [speaker, list(audio_bytes)]
+//   )
+
+window.injectAudio = async function(speaker, blob) {
+  if (!TEST_MODE) {
+    console.warn('[varta] injectAudio called but testMode is not active — ignoring');
+    return { error: 'testMode not active' };
+  }
+
+  // Mirrors what toggleRecord() does on first press.
+  // ensureSession() is already defined elsewhere in this file.
+  await ensureSession();
+
+  // From here the code path is 100% identical to a real user recording.
+  // sendAudio() creates FormData, appends the blob, and calls fetch().
+  await sendAudio(speaker, blob);
+
+  return { ok: true };
+};
+
+// ── Language options ────────────────────────────────────────────────────────
 // ── Language options ────────────────────────────────────────────────────────
 const LANGUAGES = [
   {code:"hi-IN", label:"Hindi · हिन्दी"},
