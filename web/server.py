@@ -220,6 +220,12 @@ def log_translation(
     latency_ms: int,
     char_count: int,
 ):
+    # ── DETACHED on test-latency-tracking branch ──────────────────────────────
+    # Writing to translation_logs is disabled on this branch to avoid
+    # conflicting with the main branch's collection.
+    # Re-enable once new branch-specific collections are defined.
+    return
+    # ─────────────────────────────────────────────────────────────────────────
     # Fire-and-forget — if this fails for any reason,
     # the exception is swallowed silently.
     # MongoDB being down must never surface as a 500 error.
@@ -252,6 +258,12 @@ def log_metrics(
     char_count: int,
 ):
     """Write latency data to varta_metrics. Completely separate from log_translation."""
+    # ── DETACHED on test-latency-tracking branch ──────────────────────────────
+    # Writing to request_latency / model_performance is disabled on this branch
+    # to avoid conflicting with the main branch's collections.
+    # Re-enable once new branch-specific collections are defined.
+    return
+    # ─────────────────────────────────────────────────────────────────────────
     if _mongo_metrics is None:
         return
 
