@@ -43,7 +43,7 @@ class SarvamASRAdapter(BaseASRAdapter):
         t0 = time.perf_counter()
 
         # Adapt to existing ASRInput properties (which uses language_hint)
-        lang_code = getattr(asr_input, "language_hint", None) or "unknown"
+        lang_code = getattr(asr_input, "language_hint", None) or ""
 
         params = urllib.parse.urlencode({
             "language-code": lang_code,
@@ -56,7 +56,7 @@ class SarvamASRAdapter(BaseASRAdapter):
         # Adjust header based on websockets library version compatibility
         headers = {"Api-Subscription-Key": self._api_key}
         transcripts: list[str] = []
-        detected_language: str = lang_code
+        detected_language: str = lang_code  # overwritten from WS response if available
 
         try:
             async with websockets.connect(
@@ -93,9 +93,15 @@ class SarvamASRAdapter(BaseASRAdapter):
                     try:
                         msg = json.loads(raw)
                         if msg.get("type") == "data":
-                            t = msg.get("data", {}).get("transcript", "")
+                            data = msg.get("data", {})
+                            t = data.get("transcript", "")
                             if t:
                                 transcripts.append(t)
+                            # Extract the language Saaras detected — this is the source
+                            # of truth used downstream by TTS. Overwrite our initial guess.
+                            lang_from_api = data.get("language_code", "")
+                            if lang_from_api:
+                                detected_language = lang_from_api
                     except (json.JSONDecodeError, KeyError, AttributeError):
                         pass  # Ignore malformed frames
 
