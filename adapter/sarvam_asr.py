@@ -116,10 +116,15 @@ class SarvamASRAdapter(BaseASRAdapter):
 
         latency_ms = int((time.perf_counter() - t0) * 1000)
 
+        # If Saaras WS frames didn't include language_code (common when a hint is provided),
+        # fall back to the input hint — matching the behaviour of the old REST adapter which did:
+        #   body.get("language_code", input.language_hint or "unknown")
+        final_language = detected_language or lang_code or "unknown"
+
         # Adapt to existing ASROutput which requires model_id
         return ASROutput(
-            transcript=" ".join(transcripts).strip(),
-            detected_language=detected_language,
+            transcript=(" ".join(transcripts)).strip(),
+            detected_language=final_language,
             confidence=1.0,
             latency_ms=latency_ms,
             model_id="sarvam/saaras-v3",
