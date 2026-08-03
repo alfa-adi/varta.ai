@@ -1,167 +1,123 @@
 """
-adapters/sarvam_tts.py
-──────────────────────
-Sarvam Bulbul v3 — Text-to-Speech adapter.
+Sarvam Bulbul v3 TTS Adapter — WebSocket streaming implementation.
 
-API details (confirmed from docs.sarvam.ai):
-  POST https://api.sarvam.ai/text-to-speech
-  Auth: Header  api-subscription-key: <key>
-  Body: application/json
-    {
-      "inputs":              [{"text": "text to speak"}],
-      "target_language_code": "hi-IN",
-      "model":               "bulbul:v3",
-      "speaker":             "meera",
-      "pitch":               0,
-      "pace":                1.0,
-      "loudness":            1.5,
-      "speech_sample_rate":  22050,
-      "enable_preprocessing": true,
-      "enc_format":          "mp3"
-    }
-  Response JSON:
-    { "audios": ["<base64-encoded-audio>"] }
+Replaces the REST JSON POST (benchmarked at ~3380ms avg, the dominant bottleneck)
+with WebSocket streaming via the sarvamai Python SDK. Audio chunks stream back
+as they are generated, rather than waiting for full synthesis before returning.
 
-  Supported languages: hi-IN bn-IN ta-IN te-IN gu-IN kn-IN ml-IN mr-IN od-IN pa-IN en-IN
-  Note: Bulbul v3 only covers 11 languages. For the remaining 11 scheduled languages,
-        a fallback to Bhashini IITM TTS would be needed in a full system.
+Also applies Fix 2: Opus codec replaces MP3, saving ~150–200ms browser decode time.
+
+Expected latency improvement: ~3380ms REST → ~800–1200ms WS (to last chunk).
+
+API reference:
+  https://docs.sarvam.ai/api-reference-docs/api-guides-tutorials/text-to-speech/streaming-api/web-socket
 """
 
+import asyncio
 import base64
 import time
-import httpx
 
-from adapter.base import BaseTTSAdapter
+from sarvamai import AsyncSarvamAI, AudioOutput, EventResponse
+
+from .base import BaseTTSAdapter
 from pipeline.types import TTSInput, TTSOutput
 
 
-SARVAM_TTS_ENDPOINT = "https://api.sarvam.ai/text-to-speech"
-MODEL_ID = "sarvam/bulbul-v3"
+# Voice map: (language_bcp47, gender) → Bulbul v3 speaker ID
+# Source: https://docs.sarvam.ai/api-reference-docs/models/bulbul
+_VOICE_MAP: dict[tuple[str, str], str] = {
+    ("hi-IN", "female"): "priya",
+    ("hi-IN", "male"):   "shubh",
+    ("ta-IN", "female"): "kavya",
+    ("ta-IN", "male"):   "gokul",
+    ("te-IN", "female"): "shruti",
+    ("te-IN", "male"):   "vijay",
+    ("kn-IN", "female"): "roopa",
+    ("kn-IN", "male"):   "kabir",
+    ("ml-IN", "female"): "suhani",
+    ("ml-IN", "male"):   "mani",
+    ("bn-IN", "female"): "ishita",
+    ("bn-IN", "male"):   "rohan",
+    ("mr-IN", "female"): "pooja",
+    ("mr-IN", "male"):   "rahul",
+    ("gu-IN", "female"): "neha",
+    ("gu-IN", "male"):   "amit",
+    ("pa-IN", "female"): "simran",
+    ("pa-IN", "male"):   "dev",
+    ("od-IN", "female"): "rupali",
+    ("od-IN", "male"):   "sumit",
+    ("en-IN", "female"): "ritu",
+    ("en-IN", "male"):   "aditya",
+}
+_DEFAULT_SPEAKER = "shubh"
 
-# Languages Bulbul v3 actually supports
-BULBUL_SUPPORTED = {
+# Languages supported by Bulbul v3 (11 languages: 10 Indian + English)
+_BULBUL_V3_LANGS: frozenset[str] = frozenset({
     "hi-IN", "bn-IN", "ta-IN", "te-IN", "gu-IN",
-    "kn-IN", "ml-IN", "mr-IN", "od-IN", "pa-IN", "en-IN"
-}
-
-# Voice selection: pick the most natural-sounding default per language
-# These are Sarvam's actual speaker names
-DEFAULT_VOICES = {
-    "female": {
-        "hi-IN": "priya",     "bn-IN": "priya",    "ta-IN": "priya",
-        "te-IN": "priya",     "gu-IN": "priya",    "kn-IN": "priya",
-        "ml-IN": "priya",     "mr-IN": "priya",    "od-IN": "priya",
-        "pa-IN": "priya",     "en-IN": "priya",
-    },
-    "male": {
-        "hi-IN": "amit",      "bn-IN": "amit",     "ta-IN": "amit",
-        "te-IN": "amit",      "gu-IN": "amit",     "kn-IN": "amit",
-        "ml-IN": "amit",      "mr-IN": "rahul",    "od-IN": "amit",
-        "pa-IN": "amit",      "en-IN": "amit",
-    },
-}
+    "kn-IN", "ml-IN", "mr-IN", "pa-IN", "od-IN", "en-IN",
+})
 
 
 class SarvamTTSAdapter(BaseTTSAdapter):
-    """
-    Wraps Sarvam's /text-to-speech endpoint.
-    Returns decoded audio bytes — the caller never sees base64 or Sarvam JSON.
-    """
+    """Bulbul v3 TTS via WebSocket streaming — replaces REST implementation."""
 
     def __init__(self, api_key: str):
         self._api_key = api_key
+        # AsyncSarvamAI is safe to instantiate once per adapter instance;
+        # each synthesise() call opens its own WS connection.
+        self._client = AsyncSarvamAI(api_subscription_key=api_key)
 
-    async def synthesise(self, input: TTSInput) -> TTSOutput:
-        """
-        Convert text to speech in the target language.
+    def supports_language(self, language: str) -> bool:
+        return language in _BULBUL_V3_LANGS
 
-        Key behaviours:
-          - Automatically picks the best voice for the language+gender combo
-          - Decodes base64 response → returns raw bytes (caller-ready)
-          - enable_preprocessing handles Indian-language numbers, addresses,
-            dates — critical for natural-sounding output
-          - Raises ValueError if language isn't supported by Bulbul v3
-            (in a full system, this triggers fallback to Bhashini TTS)
-        """
-        if input.language not in BULBUL_SUPPORTED:
+    def _get_speaker(self, language: str, gender: str) -> str:
+        return _VOICE_MAP.get((language, gender.lower()), _DEFAULT_SPEAKER)
+
+    async def synthesise(self, tts_input: TTSInput) -> TTSOutput:
+        if tts_input.language not in _BULBUL_V3_LANGS:
             raise ValueError(
-                f"Bulbul v3 does not support '{input.language}'. "
-                f"Supported: {sorted(BULBUL_SUPPORTED)}"
+                f"Bulbul v3 does not support '{tts_input.language}'. "
+                f"Supported languages: {sorted(_BULBUL_V3_LANGS)}. "
+                "Use IIT Madras TTS (BhashiniTTSAdapter) for remaining 11 languages."
             )
 
-        start_ms = int(time.time() * 1000)
+        t0 = time.perf_counter()
+        gender = getattr(tts_input, "voice_gender", "female")
+        speaker = self._get_speaker(tts_input.language, gender)
 
-        # Select the right voice name for this language + gender
-        voice = (
-            DEFAULT_VOICES
-            .get(input.voice_gender, DEFAULT_VOICES["female"])
-            .get(input.language, "priya")
-        )
+        audio_chunks: list[bytes] = []
 
-        payload = {
-            "text":                 input.text,
-            "target_language_code": input.language,
-            "model":                "bulbul:v3",
-            "speaker":              voice,
-            "pace":                 input.pace,          # 0.5–2.0
-            "speech_sample_rate":   input.sample_rate,
-            "enable_preprocessing": True,
-            "enc_format":           input.audio_format,  # "mp3" | "wav" etc.
-        }
-
-        # ── Timing hooks ─────────────────────────────────────────────
-        timing = {}
-
-        async def on_request(request):
-            timing['request_sent'] = int(time.time() * 1000)
-
-        async def on_response(response):
-            timing['response_received'] = int(time.time() * 1000)
-
-        async with httpx.AsyncClient(
-            timeout=30.0,
-            event_hooks={
-                'request':  [on_request],
-                'response': [on_response],
-            }
-        ) as client:
-            tcp_start = int(time.time() * 1000)
-            response = await client.post(
-                SARVAM_TTS_ENDPOINT,
-                headers={
-                    "api-subscription-key": self._api_key,
-                    "Content-Type":         "application/json",
-                },
-                json=payload,
-            )
-            tcp_ms = timing.get('request_sent', tcp_start) - tcp_start
-            api_ms = timing.get('response_received', int(time.time() * 1000)) - timing.get('request_sent', tcp_start)
-
-        if response.status_code >= 400:
-            try:
-                err_body = response.json()
-            except Exception:
-                err_body = response.text
-            raise RuntimeError(
-                f"Sarvam TTS API error {response.status_code}: {err_body}"
+        async with self._client.text_to_speech_streaming.connect(
+            model="bulbul:v3",
+            send_completion_event=True,  # Server sends "final" event when done
+        ) as ws:
+            # Config must be the first message after connect
+            await ws.configure(
+                target_language_code=tts_input.language,
+                speaker=speaker,
+                output_audio_codec="opus",   # Fix 2: Opus saves ~150-200ms vs mp3
+                speech_sample_rate=24000,    # OPUS codec requires 24000 (or 16k etc)
+                pace=getattr(tts_input, "pace", 1.0),                    # Normal speed; adjust if needed
             )
 
-        parse_start = int(time.time() * 1000)
-        body = response.json()
+            await ws.convert(tts_input.text)
+            await ws.flush()  # Signal end of text; server finalizes synthesis
 
-        # Sarvam returns { "audios": ["<base64string>"] }
-        # We decode the base64 immediately so the caller gets raw bytes.
-        raw_audio = base64.b64decode(body["audios"][0])
+            async for message in ws:
+                if isinstance(message, AudioOutput):
+                    # Each AudioOutput carries a base64-encoded audio chunk
+                    audio_chunks.append(base64.b64decode(message.data.audio))
+                elif isinstance(message, EventResponse):
+                    if message.data.event_type == "final":
+                        break  # All chunks received; clean exit
 
-        latency_ms = int(time.time() * 1000) - start_ms
+        audio_bytes = b"".join(audio_chunks)
+        latency_ms = int((time.perf_counter() - t0) * 1000)
 
         return TTSOutput(
-            audio_bytes  = raw_audio,
-            audio_format = input.audio_format,
-            language     = input.language,
-            latency_ms   = latency_ms,
-            model_id     = MODEL_ID,
-            tcp_ms       = tcp_ms,
-            api_ms       = api_ms,
-            parse_ms     = int(time.time() * 1000) - parse_start,
+            audio_bytes=audio_bytes,
+            audio_format="opus",  # Updated from "mp3" — browser must handle Opus
+            language=tts_input.language,
+            latency_ms=latency_ms,
+            model_id="sarvam/bulbul-v3",
         )

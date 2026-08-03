@@ -1,126 +1,120 @@
 """
-adapters/sarvam_asr.py
-──────────────────────
-Sarvam Saaras v3 — Speech-to-Text adapter.
+Sarvam Saaras v3 ASR Adapter — WebSocket implementation.
 
-API details (confirmed from docs.sarvam.ai):
-  POST https://api.sarvam.ai/speech-to-text
-  Auth: Header  api-subscription-key: <key>
-  Body: multipart/form-data
-    - file          : audio bytes (wav/mp3/ogg/webm/flac etc.)
-    - model         : "saaras:v3"
-    - language_code : BCP-47 string e.g. "hi-IN"  (optional — omit for auto-detect)
-    - mode          : "transcribe" | "codemix" | "verbatim" | "translit"
-  Response JSON:
-    { "transcript": "...", "language_code": "hi-IN" }
+Replaces the REST multipart POST with a WebSocket connection to
+wss://api.sarvam.ai/speech-to-text/ws, eliminating per-request TCP
+reconnect overhead and REST serialization roundtrip.
+
+Expected latency improvement: ~1307ms REST → ~600–900ms WS.
+
+API reference:
+  https://docs.sarvam.ai/api-reference-docs/speech-to-text/transcribe/ws
 """
 
+import asyncio
+import base64
+import json
 import time
-import httpx
+import urllib.parse
 
-from adapter.base import BaseASRAdapter
+import websockets
+import websockets.exceptions
+
+from .base import BaseASRAdapter
 from pipeline.types import ASRInput, ASROutput
 
+_WS_URL = "wss://api.sarvam.ai/speech-to-text/ws"
 
-SARVAM_ASR_ENDPOINT = "https://api.sarvam.ai/speech-to-text"
-MODEL_ID = "sarvam/saaras-v3"
+# Send audio in 64 KB chunks to avoid a single oversized WS frame.
+_AUDIO_CHUNK_BYTES = 65536
+
+# How long to wait for each transcript message after sending flush.
+# Saaras v3 is typically sub-2s; 10s is a safe timeout for slow clips.
+_RECV_TIMEOUT_SECONDS = 10.0
 
 
 class SarvamASRAdapter(BaseASRAdapter):
-    """
-    Wraps Sarvam's /speech-to-text endpoint.
-    The caller never sees Sarvam's multipart format — only ASRInput/ASROutput.
-    """
+    """Saaras v3 ASR via WebSocket — replaces REST implementation."""
 
     def __init__(self, api_key: str):
-        # Store the key. We use a custom header — NOT a Bearer token.
-        # This is a Sarvam-specific detail hidden from the rest of the system.
         self._api_key = api_key
 
-    async def transcribe(self, input: ASRInput) -> ASROutput:
-        """
-        Send audio to Saaras v3 and return a clean ASROutput.
+    async def transcribe(self, asr_input: ASRInput) -> ASROutput:
+        t0 = time.perf_counter()
 
-        Key behaviours:
-          - If input.language_hint is None, we omit language_code entirely
-            → Saaras auto-detects the language (our cross-pipeline needs this)
-          - The response always includes language_code so we know what was spoken
-          - We measure wall-clock latency for the registry feedback loop
-        """
-        start_ms = int(time.time() * 1000)
+        # Adapt to existing ASRInput properties (which uses language_hint)
+        lang_code = getattr(asr_input, "language_hint", None) or "unknown"
 
-        # Build the multipart form fields
-        form_data: dict = {
-            "model": (None, "saaras:v3"),        # Always use v3
-            "mode":  (None, input.mode),          # "transcribe" in our case
-        }
+        params = urllib.parse.urlencode({
+            "language-code": lang_code,
+            "model": "saaras:v3",
+            "mode": getattr(asr_input, "mode", "transcribe"),
+            "sample_rate": str(getattr(asr_input, "sample_rate", 16000)),
+        })
+        ws_url = f"{_WS_URL}?{params}"
 
-        # language_code is OPTIONAL — only send it if the caller provides a hint.
-        # Omitting it triggers Saaras's auto-detection, which is exactly what
-        # the dual pipeline needs on the first utterance of each speaker.
-        if input.language_hint:
-            form_data["language_code"] = (None, input.language_hint)
+        # Adjust header based on websockets library version compatibility
+        headers = {"Api-Subscription-Key": self._api_key}
+        transcripts: list[str] = []
+        detected_language: str = lang_code
 
-        # The audio file must be a tuple: (filename, bytes, content_type)
-        # Sarvam uses the filename extension to help codec detection.
-        audio_filename = f"audio.{input.audio_format}"
-        mime_map = {
-            "wav":  "audio/wav",
-            "mp3":  "audio/mpeg",
-            "ogg":  "audio/ogg",
-            "webm": "audio/webm",
-            "flac": "audio/flac",
-            "m4a":  "audio/mp4",
-        }
-        content_type = mime_map.get(input.audio_format, "audio/wav")
+        try:
+            async with websockets.connect(
+                ws_url,
+                additional_headers=headers, # Use additional_headers to be safe with newer websockets version
+                ping_interval=20,
+                ping_timeout=10,
+                open_timeout=15,
+            ) as ws:
+                # Send audio in chunks to stay within WS frame limits
+                audio = asr_input.audio_bytes
+                for offset in range(0, len(audio), _AUDIO_CHUNK_BYTES):
+                    chunk = audio[offset : offset + _AUDIO_CHUNK_BYTES]
+                    await ws.send(json.dumps({
+                        "audio": {
+                            "data": base64.b64encode(chunk).decode("utf-8"),
+                            "sample_rate": str(getattr(asr_input, "sample_rate", 16000)),
+                            "encoding": f"audio/{getattr(asr_input, 'audio_format', 'wav')}",
+                        }
+                    }))
 
-        form_data["file"] = (audio_filename, input.audio_bytes, content_type)
+                # Signal end of audio — server will finalize and close connection
+                await ws.send(json.dumps({"type": "flush"}))
 
-        # ── Timing hooks ─────────────────────────────────────────────
-        timing = {}
+                # Drain transcript messages until server closes the connection
+                while True:
+                    try:
+                        raw = await asyncio.wait_for(
+                            ws.recv(), timeout=_RECV_TIMEOUT_SECONDS
+                        )
+                    except asyncio.TimeoutError:
+                        # No more messages within timeout — treat as complete
+                        break
+                    try:
+                        msg = json.loads(raw)
+                        if msg.get("type") == "data":
+                            t = msg.get("data", {}).get("transcript", "")
+                            if t:
+                                transcripts.append(t)
+                    except (json.JSONDecodeError, KeyError, AttributeError):
+                        pass  # Ignore malformed frames
 
-        async def on_request(request):
-            timing['request_sent'] = int(time.time() * 1000)
+        except websockets.exceptions.ConnectionClosedOK:
+            pass  # Server closed normally after flush — expected
+        except websockets.exceptions.ConnectionClosedError as exc:
+            raise RuntimeError(f"Saaras v3 WS closed with error: {exc}") from exc
+        except websockets.exceptions.WebSocketException as exc:
+            raise RuntimeError(f"Saaras v3 WS error: {exc}") from exc
+        except OSError as exc:
+            raise RuntimeError(f"Saaras v3 WS network error: {exc}") from exc
 
-        async def on_response(response):
-            timing['response_received'] = int(time.time() * 1000)
+        latency_ms = int((time.perf_counter() - t0) * 1000)
 
-        # Make the async HTTP request
-        async with httpx.AsyncClient(
-            timeout=60.0,
-            event_hooks={
-                'request':  [on_request],
-                'response': [on_response],
-            }
-        ) as client:
-            tcp_start = int(time.time() * 1000)
-            response = await client.post(
-                SARVAM_ASR_ENDPOINT,
-                headers={"api-subscription-key": self._api_key},
-                files=form_data,
-            )
-            tcp_ms = timing.get('request_sent', tcp_start) - tcp_start
-            api_ms = timing.get('response_received', int(time.time() * 1000)) - timing.get('request_sent', tcp_start)
-
-        # Raise immediately on HTTP errors so callers see clean exceptions
-        response.raise_for_status()
-
-        parse_start = int(time.time() * 1000)
-        body = response.json()
-
-        latency_ms = int(time.time() * 1000) - start_ms
-
-        # Sarvam returns { "transcript": "...", "language_code": "hi-IN" }
-        # We normalise this into our universal ASROutput type.
-        detected_lang = body.get("language_code", input.language_hint or "unknown")
-
+        # Adapt to existing ASROutput which requires model_id
         return ASROutput(
-            transcript        = body.get("transcript", ""),
-            detected_language = detected_lang,
-            confidence        = body.get("language_confidence", 1.0),
-            latency_ms        = latency_ms,
-            model_id          = MODEL_ID,
-            tcp_ms            = tcp_ms,
-            api_ms            = api_ms,
-            parse_ms          = int(time.time() * 1000) - parse_start,
+            transcript=" ".join(transcripts).strip(),
+            detected_language=detected_language,
+            confidence=1.0,
+            latency_ms=latency_ms,
+            model_id="sarvam/saaras-v3",
         )

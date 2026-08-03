@@ -10,3 +10,5 @@ redis==5.0.1
 slowapi==0.1.9
 pymongo==4.7.1
 requests==2.32.3
+sarvamai
+websockets>=12.0

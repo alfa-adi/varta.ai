@@ -556,7 +556,7 @@ function addBubble(speaker, text, lang, audiob64, latency, timing) {
 
   const langCode = lang ? `<div class="bubble-label">${lang}${isTranslation ? " · translated" : " · original"}</div>` : "";
   const latText  = latency ? `<div class="bubble-lat">${latency}ms</div>` : "";
-  const audioTag = audiob64 ? `<audio controls src="data:audio/mp3;base64,${audiob64}"></audio>` : "";
+  const audioTag = audiob64 ? `<audio controls src="data:audio/ogg;base64,${audiob64}"></audio>` : "";
 
   div.innerHTML = `${langCode}<div class="bubble-text">${text || "—"}</div>${latText}${audioTag}`;
 
