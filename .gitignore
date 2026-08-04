@@ -17,12 +17,15 @@ __pycache__/
 output.txt
 # benchmark datasets, test results, and test scripts
 test/
+tests/
 probe_*.py
 check_*.py
 debug_*.py
-test_asr_*.py
-test_playwright_*.py
+test_*.py
 run_smoke_tests.py
+dummy_*
+sample_*
+audio.wav
 *.wav
 *.webm
 *.opus
