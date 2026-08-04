@@ -13,6 +13,7 @@ API reference:
 
 import asyncio
 import base64
+import io
 import json
 import time
 import urllib.parse
@@ -32,6 +33,29 @@ _AUDIO_CHUNK_BYTES = 65536
 # Saaras v3 is typically sub-2s; 10s is a safe timeout for slow clips.
 _RECV_TIMEOUT_SECONDS = 10.0
 
+# Saaras WS only accepts audio/wav. Convert everything else using pydub.
+_WAV_SAMPLE_RATE = 16000
+
+
+def _to_wav_bytes(audio_bytes: bytes, audio_format: str) -> bytes:
+    """
+    Convert audio bytes to 16kHz mono WAV in-memory.
+    Saaras v3 WS API only accepts audio/wav — webm/opus from the browser
+    must be transcoded before sending.
+    Uses pydub which in turn uses ffmpeg under the hood.
+    """
+    if audio_format == "wav":
+        return audio_bytes  # Already WAV — pass through without touching
+
+    from pydub import AudioSegment
+    fmt = audio_format if audio_format != "webm" else "webm"
+    seg = AudioSegment.from_file(io.BytesIO(audio_bytes), format=fmt)
+    seg = seg.set_frame_rate(_WAV_SAMPLE_RATE).set_channels(1).set_sample_width(2)
+    buf = io.BytesIO()
+    seg.export(buf, format="wav")
+    return buf.getvalue()
+
+
 
 class SarvamASRAdapter(BaseASRAdapter):
     """Saaras v3 ASR via WebSocket — replaces REST implementation."""
@@ -45,12 +69,14 @@ class SarvamASRAdapter(BaseASRAdapter):
         # Adapt to existing ASRInput properties (which uses language_hint)
         lang_code = getattr(asr_input, "language_hint", None) or ""
 
-        params = urllib.parse.urlencode({
-            "language-code": lang_code,
+        query_dict = {
             "model": "saaras:v3",
             "mode": getattr(asr_input, "mode", "transcribe"),
-            "sample_rate": str(getattr(asr_input, "sample_rate", 16000)),
-        })
+            "sample_rate": str(_WAV_SAMPLE_RATE),
+        }
+        if lang_code:
+            query_dict["language-code"] = lang_code
+        params = urllib.parse.urlencode(query_dict)
         ws_url = f"{_WS_URL}?{params}"
 
         # Adjust header based on websockets library version compatibility
@@ -61,20 +87,24 @@ class SarvamASRAdapter(BaseASRAdapter):
         try:
             async with websockets.connect(
                 ws_url,
-                additional_headers=headers, # Use additional_headers to be safe with newer websockets version
+                additional_headers=headers,
                 ping_interval=20,
                 ping_timeout=10,
                 open_timeout=15,
             ) as ws:
+                # Convert to 16kHz mono WAV — Saaras WS only accepts audio/wav.
+                # For WAV input this is a no-op; for webm/mp3/ogg it transcodes.
+                audio_format = getattr(asr_input, "audio_format", "wav")
+                audio = _to_wav_bytes(asr_input.audio_bytes, audio_format)
+
                 # Send audio in chunks to stay within WS frame limits
-                audio = asr_input.audio_bytes
                 for offset in range(0, len(audio), _AUDIO_CHUNK_BYTES):
                     chunk = audio[offset : offset + _AUDIO_CHUNK_BYTES]
                     await ws.send(json.dumps({
                         "audio": {
                             "data": base64.b64encode(chunk).decode("utf-8"),
-                            "sample_rate": str(getattr(asr_input, "sample_rate", 16000)),
-                            "encoding": f"audio/{getattr(asr_input, 'audio_format', 'wav')}",
+                            "sample_rate": str(_WAV_SAMPLE_RATE),
+                            "encoding": "audio/wav",   # WS API only accepts wav
                         }
                     }))
 
