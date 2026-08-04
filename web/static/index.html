@@ -373,7 +373,10 @@ async function toggleRecord(speaker) {
       // Start recording
       const stream = await navigator.mediaDevices.getUserMedia({audio:true});
       const chunks = [];
-      const recorder = new MediaRecorder(stream, {mimeType:"audio/webm"});
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "audio/webm";
+      const recorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 16000 });
       mediaRecorders[speaker] = recorder;
 
       recorder.ondataavailable = e => chunks.push(e.data);
