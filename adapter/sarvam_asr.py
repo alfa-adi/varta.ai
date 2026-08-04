@@ -31,7 +31,7 @@ _AUDIO_CHUNK_BYTES = 65536
 
 # How long to wait for each transcript message after sending flush.
 # Saaras v3 is typically sub-2s; 10s is a safe timeout for slow clips.
-_RECV_TIMEOUT_SECONDS = 10.0
+_RECV_TIMEOUT_SECONDS = 3.0
 
 # Saaras WS only accepts audio/wav. Convert everything else using pydub.
 _WAV_SAMPLE_RATE = 16000
@@ -121,7 +121,7 @@ class SarvamASRAdapter(BaseASRAdapter):
                         # No more messages within timeout — treat as complete
                         break
                     try:
-                        msg = json.loads(raw)
+                        msg = json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode("utf-8"))
                         if msg.get("type") == "data":
                             data = msg.get("data", {})
                             t = data.get("transcript", "")
@@ -132,7 +132,11 @@ class SarvamASRAdapter(BaseASRAdapter):
                             lang_from_api = data.get("language_code", "")
                             if lang_from_api:
                                 detected_language = lang_from_api
-                    except (json.JSONDecodeError, KeyError, AttributeError):
+                            
+                            # Break immediately once transcript frame is received
+                            if t:
+                                break
+                    except (json.JSONDecodeError, KeyError, AttributeError, TypeError):
                         pass  # Ignore malformed frames
 
         except websockets.exceptions.ConnectionClosedOK:
@@ -146,14 +150,14 @@ class SarvamASRAdapter(BaseASRAdapter):
 
         latency_ms = int((time.perf_counter() - t0) * 1000)
 
-        # If Saaras WS frames didn't include language_code (common when a hint is provided),
-        # fall back to the input hint — matching the behaviour of the old REST adapter which did:
-        #   body.get("language_code", input.language_hint or "unknown")
         final_language = detected_language or lang_code or "unknown"
+        transcript_text = (" ".join(transcripts)).strip()
+
+        print(f"[ASR] audio_bytes: {len(asr_input.audio_bytes)} | wav: {len(audio)} | text: '{transcript_text[:40]}' | lang: {final_language} | latency: {latency_ms}ms")
 
         # Adapt to existing ASROutput which requires model_id
         return ASROutput(
-            transcript=(" ".join(transcripts)).strip(),
+            transcript=transcript_text,
             detected_language=final_language,
             confidence=1.0,
             latency_ms=latency_ms,

@@ -114,6 +114,8 @@ class SarvamTTSAdapter(BaseTTSAdapter):
         audio_bytes = b"".join(audio_chunks)
         latency_ms = int((time.perf_counter() - t0) * 1000)
 
+        print(f"[TTS] text len: {len(tts_input.text)} | audio_bytes: {len(audio_bytes)} | lang: {tts_input.language} | latency: {latency_ms}ms")
+
         return TTSOutput(
             audio_bytes=audio_bytes,
             audio_format="opus",  # Updated from "mp3" — browser must handle Opus
