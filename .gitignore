@@ -18,7 +18,6 @@ output.txt
 # benchmark datasets, test results, and test scripts
 test/
 tests/
-probe_*.py
 check_*.py
 debug_*.py
 test_*.py
