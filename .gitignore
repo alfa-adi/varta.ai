@@ -15,8 +15,18 @@ __pycache__/
 
 # Temporary outputs / Logs
 output.txt
-test/datasets/        # audio samples (large binary files)
-test/results/*.png    # generated charts
+# benchmark datasets, test results, and test scripts
+test/
+probe_*.py
+check_*.py
+debug_*.py
+test_asr_*.py
+test_playwright_*.py
+run_smoke_tests.py
+*.wav
+*.webm
+*.opus
+*.mp3
 *.log
 *.sqlite3
 tests/output/
