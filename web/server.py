@@ -258,11 +258,9 @@ def log_metrics(
     char_count: int,
 ):
     """Write latency data to varta_metrics. Completely separate from log_translation."""
-    # ── DETACHED on test-latency-tracking branch ──────────────────────────────
-    # Writing to request_latency / model_performance is disabled on this branch
-    # to avoid conflicting with the main branch's collections.
-    # Re-enable once new branch-specific collections are defined.
-    return
+    # ── Re-enabled on test-latency-tracking branch ────────────────────────────
+    # Previously disabled to avoid conflicting with main branch collections.
+    # Now re-enabled so benchmark data flows to MongoDB.
     # ─────────────────────────────────────────────────────────────────────────
     if _mongo_metrics is None:
         return
