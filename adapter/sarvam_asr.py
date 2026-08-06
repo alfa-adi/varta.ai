@@ -84,7 +84,12 @@ class SarvamASRAdapter(BaseASRAdapter):
         transcripts: list[str] = []
         detected_language: str = lang_code  # overwritten from WS response if available
 
+        tcp_ms = 0
+        api_ms = 0
+        parse_ms = 0
+
         try:
+            tcp_start = time.perf_counter()
             async with websockets.connect(
                 ws_url,
                 additional_headers=headers,
@@ -92,6 +97,8 @@ class SarvamASRAdapter(BaseASRAdapter):
                 ping_timeout=10,
                 open_timeout=15,
             ) as ws:
+                tcp_ms = int((time.perf_counter() - tcp_start) * 1000)
+
                 # Convert to 16kHz mono WAV — Saaras WS only accepts audio/wav.
                 # For WAV input this is a no-op; for webm/mp3/ogg it transcodes.
                 audio_format = getattr(asr_input, "audio_format", "wav")
@@ -111,6 +118,8 @@ class SarvamASRAdapter(BaseASRAdapter):
                 # Signal end of audio — server will finalize and close connection
                 await ws.send(json.dumps({"type": "flush"}))
 
+                api_start = time.perf_counter()
+                
                 # Drain transcript messages until server closes the connection
                 while True:
                     try:
@@ -120,6 +129,9 @@ class SarvamASRAdapter(BaseASRAdapter):
                     except asyncio.TimeoutError:
                         # No more messages within timeout — treat as complete
                         break
+                        
+                    api_ms += int((time.perf_counter() - api_start) * 1000)
+                    parse_start = time.perf_counter()
                     try:
                         msg = json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode("utf-8"))
                         if msg.get("type") == "data":
@@ -135,9 +147,12 @@ class SarvamASRAdapter(BaseASRAdapter):
                             
                             # Break immediately once transcript frame is received
                             if t:
+                                parse_ms += int((time.perf_counter() - parse_start) * 1000)
                                 break
                     except (json.JSONDecodeError, KeyError, AttributeError, TypeError):
                         pass  # Ignore malformed frames
+                    parse_ms += int((time.perf_counter() - parse_start) * 1000)
+                    api_start = time.perf_counter()  # reset api_start for next chunk
 
         except websockets.exceptions.ConnectionClosedOK:
             pass  # Server closed normally after flush — expected
@@ -162,4 +177,7 @@ class SarvamASRAdapter(BaseASRAdapter):
             confidence=1.0,
             latency_ms=latency_ms,
             model_id="sarvam/saaras-v3",
+            tcp_ms=tcp_ms,
+            api_ms=api_ms,
+            parse_ms=parse_ms,
         )

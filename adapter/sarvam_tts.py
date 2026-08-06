@@ -86,11 +86,17 @@ class SarvamTTSAdapter(BaseTTSAdapter):
         speaker = self._get_speaker(tts_input.language, gender)
 
         audio_chunks: list[bytes] = []
+        tcp_ms = 0
+        api_ms = 0
+        parse_ms = 0
 
+        tcp_start = time.perf_counter()
         async with self._client.text_to_speech_streaming.connect(
             model="bulbul:v3",
             send_completion_event=True,  # Server sends "final" event when done
         ) as ws:
+            tcp_ms = int((time.perf_counter() - tcp_start) * 1000)
+            
             # Config must be the first message after connect
             await ws.configure(
                 target_language_code=tts_input.language,
@@ -103,13 +109,21 @@ class SarvamTTSAdapter(BaseTTSAdapter):
             await ws.convert(tts_input.text)
             await ws.flush()  # Signal end of text; server finalizes synthesis
 
+            api_start = time.perf_counter()
             async for message in ws:
+                api_ms += int((time.perf_counter() - api_start) * 1000)
+                parse_start = time.perf_counter()
+                
                 if isinstance(message, AudioOutput):
                     # Each AudioOutput carries a base64-encoded audio chunk
                     audio_chunks.append(base64.b64decode(message.data.audio))
                 elif isinstance(message, EventResponse):
                     if message.data.event_type == "final":
+                        parse_ms += int((time.perf_counter() - parse_start) * 1000)
                         break  # All chunks received; clean exit
+                        
+                parse_ms += int((time.perf_counter() - parse_start) * 1000)
+                api_start = time.perf_counter()
 
         audio_bytes = b"".join(audio_chunks)
         latency_ms = int((time.perf_counter() - t0) * 1000)
@@ -122,4 +136,7 @@ class SarvamTTSAdapter(BaseTTSAdapter):
             language=tts_input.language,
             latency_ms=latency_ms,
             model_id="sarvam/bulbul-v3",
+            tcp_ms=tcp_ms,
+            api_ms=api_ms,
+            parse_ms=parse_ms,
         )

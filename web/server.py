@@ -658,7 +658,7 @@ async def translate_speaker_a(
     if speaker_result.deferred_result:
         dr = speaker_result.deferred_result
         dr_timing = _build_timing(dr, {
-            "total_ms": 0, "session_load_ms": 0, "pipeline_build_ms": 0,
+            "total_ms": dr.total_latency_ms, "session_load_ms": 0, "pipeline_build_ms": 0,
             "response_build_ms": 0, "state_save_ms": 0, "log_write_ms": 0,
         })
         response_data["deferred"] = {
@@ -775,7 +775,7 @@ async def translate_speaker_b(
     if speaker_result.deferred_result:
         dr = speaker_result.deferred_result
         dr_timing = _build_timing(dr, {
-            "total_ms": 0, "session_load_ms": 0, "pipeline_build_ms": 0,
+            "total_ms": dr.total_latency_ms, "session_load_ms": 0, "pipeline_build_ms": 0,
             "response_build_ms": 0, "state_save_ms": 0, "log_write_ms": 0,
         })
         response_data["deferred"] = {
