@@ -214,12 +214,15 @@ class SarvamLiveASRAdapter:
         Open a persistent WS to saaras:v3-realtime and configure it.
         Call once per session/speaker. Blocks until the WS handshake completes.
         """
-        params = urllib.parse.urlencode({
+        query_dict = {
             "model": "saaras:v3-realtime",
-            "language_code": language_hint,
             "input_audio_codec": "pcm_s16le",
             "sample_rate": str(_WAV_SAMPLE_RATE),
-        })
+        }
+        if language_hint and language_hint != "auto":
+            query_dict["language-code"] = language_hint
+            
+        params = urllib.parse.urlencode(query_dict)
         url = f"{_REALTIME_WS_URL}?{params}"
         headers = {"Api-Subscription-Key": self._api_key}
 

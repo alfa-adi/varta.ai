@@ -378,6 +378,37 @@ async function ensureLiveWS(speaker) {
   ws.onclose = () => {
     console.log(`[WS/${speaker}] closed`);
     liveWS[speaker] = null;
+    
+    // Reset UI if it closed unexpectedly while active
+    const spin = document.getElementById(`spin-${speaker}`);
+    if (spin && spin.style.display === 'block') {
+      spin.style.display = 'none';
+      document.getElementById(`rec-label-${speaker}`).textContent = 'Press to record';
+      showError('Connection to server lost during processing.');
+    }
+    
+    if (isRecording[speaker]) {
+      isRecording[speaker] = false;
+      document.getElementById(`rec-${speaker}`).className = 'record-btn idle';
+      document.getElementById(`rec-${speaker}`).textContent = '🎙';
+      document.getElementById(`rec-label-${speaker}`).textContent = 'Press to record';
+      showError('Connection to server lost while recording.');
+      
+      // Stop mic
+      if (workletNode[speaker]) {
+        workletNode[speaker].port.onmessage = null;
+        workletNode[speaker].disconnect();
+        workletNode[speaker] = null;
+      }
+      if (micStream[speaker]) {
+        micStream[speaker].getTracks().forEach(t => t.stop());
+        micStream[speaker] = null;
+      }
+      if (audioCtx[speaker]) {
+        audioCtx[speaker].close().catch(()=>{});
+        audioCtx[speaker] = null;
+      }
+    }
   };
 
   // Wait for the connection to open before returning
@@ -416,6 +447,9 @@ async function toggleRecord(speaker) {
       // Signal server to flush utterance and run NMT+TTS
       if (liveWS[speaker] && liveWS[speaker].readyState === WebSocket.OPEN) {
         liveWS[speaker].send(JSON.stringify({ type: 'stop_recording' }));
+      } else {
+        showError('WebSocket connection is not open. Please try again.');
+        document.getElementById(`rec-label-${speaker}`).textContent = 'Press to record';
       }
 
     } else {
