@@ -1,0 +1,152 @@
+:root {
+  --bg: #0d121a;
+  --surface: #141c28;
+  --border: #2a3441;
+  --text: #e2e8f0;
+  --muted: #8b9bb4;
+  --green: #22c55e;
+  --accent: #3b82f6;
+  --purple: #8b5cf6;
+  --arrow-color: #4b5563;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+body { background: var(--bg); color: var(--text); padding: 20px; }
+
+header { display: flex; flex-direction: column; align-items: center; margin-bottom: 20px; }
+h1 { font-size: 24px; font-weight: 700; color: white; margin-bottom: 8px;}
+.tabs { margin-top: 16px; display: flex; gap: 8px; }
+.tab { background: var(--surface); color: var(--muted); border: 1px solid var(--border); padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+.tab.active { background: var(--accent); color: white; border-color: var(--accent); }
+.controls { margin-top: 16px; display: flex; gap: 8px; }
+.btn { padding: 10px 20px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600;}
+.btn-primary { background: var(--green); color: #000; }
+.btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+
+.main-content {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* FLOWCHART */
+.flowchart {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  height: 600px;
+  width: 100%;
+  overflow: hidden;
+}
+
+svg {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+}
+.line {
+  fill: none;
+  stroke: var(--arrow-color);
+  stroke-width: 2;
+  marker-end: url(#arrowhead);
+  transition: stroke 0.3s;
+}
+.line.active {
+  stroke: var(--green);
+  marker-end: url(#arrowhead-active);
+  stroke-dasharray: 8;
+  animation: dash 0.5s linear infinite;
+}
+@keyframes dash {
+  to { stroke-dashoffset: -16; }
+}
+
+.node {
+  position: absolute;
+  background: white;
+  color: black;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border: 2px solid black;
+  transition: all 0.3s;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+}
+.node.active { background: var(--green); color: black; box-shadow: 0 0 15px var(--green); }
+.node.done { background: #e2e8f0; color: #333; }
+
+.node.diamond {
+  width: 80px; height: 80px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border-radius: 4px;
+}
+.node.diamond .inner { transform: rotate(-45deg); line-height: 1.2; font-size: 11px; }
+
+.node.rect {
+  width: 120px; height: 60px;
+  border-radius: 8px;
+}
+
+.node.rounded {
+  width: 110px; height: 40px;
+  border-radius: 20px;
+  font-size: 11px;
+}
+
+.node.box {
+  width: 160px; height: 160px;
+  border-radius: 0;
+  background: transparent;
+  border: 1px dashed var(--arrow-color);
+}
+.node.box .circle {
+  width: 120px; height: 120px;
+  border-radius: 50%;
+  border: 2px solid black;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  transition: all 0.3s;
+}
+.node.box.active .circle { background: var(--green); }
+
+/* METRICS PANEL */
+.metrics-bottom-container {
+  display: flex;
+  gap: 32px;
+  width: 100%;
+  justify-content: center;
+}
+
+.metric-card {
+  background: #111b27;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  flex: 1;
+  max-width: 400px;
+}
+.card-title { font-size: 14px; font-weight: 600; color: #a1a1aa; margin-bottom: 12px; }
+.audio-player { background: #1f2937; padding: 8px 12px; border-radius: 20px; font-size: 12px; display: inline-block; margin-bottom: 12px; color: white;}
+.latency-header { font-size: 14px; color: var(--muted); margin-bottom: 16px; }
+.val-green { color: var(--green); font-weight: 700; font-size: 16px; margin-left: 8px; }
+
+.section-title { font-size: 11px; font-weight: 700; color: var(--muted); margin: 16px 0 8px 0; }
+.metric-row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #d1d5db; margin-bottom: 4px; }
+.metric-row span:first-child { width: 70px; text-align: right; margin-right: 12px; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+
+.bar-container { display: flex; align-items: center; flex: 1; }
+.bar { height: 6px; border-radius: 3px; margin-right: 8px; transition: width 0.3s; }
+.bar-blue { background: #3b82f6; }
+.bar-green { background: #10b981; }
+.bar-purple { background: #8b5cf6; }
+.m-val { width: 50px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 11px; }

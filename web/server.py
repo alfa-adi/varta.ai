@@ -25,11 +25,11 @@ from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from adapter.sarvam_asr import SarvamASRAdapter
+from adapter.sarvam_asr import SarvamASRAdapter, SarvamLiveASRAdapter
 from adapter.sarvam_nmt import SarvamNMTAdapter
 from adapter.sarvam_tts import SarvamTTSAdapter
 from pipeline.dual import DualPipeline
@@ -48,6 +48,13 @@ if not API_KEY:
 _asr = SarvamASRAdapter(API_KEY)
 _nmt = SarvamNMTAdapter(API_KEY)
 _tts = SarvamTTSAdapter(API_KEY)
+
+# ── Live ASR session registry ─────────────────────────────────────────────────
+# Maps "{session_id}:{speaker}" → SarvamLiveASRAdapter
+# Stored in-process — WebSocket objects cannot be serialized to Redis.
+# Each entry holds a persistent connection to saaras:v3-realtime.
+# One entry per speaker ("a" or "b") per session.
+_live_asr_sessions: dict[str, SarvamLiveASRAdapter] = {}
 
 # In-memory session store: session_id → DualPipeline instance
 # Each session has its own SessionState (detected languages per speaker)
@@ -858,6 +865,229 @@ async def receive_browser_metrics(
         except Exception:
             pass
     return {"status": "ok"}
+
+
+# ── Live transcript Redis helpers ────────────────────────────────────────────
+# These store partial/final ASR transcript frames while the user is recording.
+# Key: "asr:{speaker}:{session_id}"  Type: List  TTL: 2h
+
+def _push_transcript(session_id: str, speaker: str, text: str, is_partial: bool) -> None:
+    """Append a transcript frame to the Redis list (or in-memory fallback)."""
+    entry = json.dumps({
+        "text": text,
+        "is_partial": is_partial,
+        "ts": int(time.time() * 1000),
+    })
+    key = f"asr:{speaker}:{session_id}"
+    if _redis:
+        _redis.rpush(key, entry)
+        _redis.expire(key, SESSION_TTL)
+    else:
+        # In-memory fallback: piggyback on _local_sessions using a sub-key
+        bucket = _local_sessions.setdefault(f"__asr_{speaker}_{session_id}", [])
+        bucket.append(json.loads(entry))
+
+
+def _pop_final_transcript(session_id: str, speaker: str) -> tuple[str, str]:
+    """
+    Read all buffered transcript frames, clear the list, and return
+    (final_text, detected_language). Final text is the last non-empty entry.
+    """
+    key = f"asr:{speaker}:{session_id}"
+    lang_key = f"asr:lang:{speaker}:{session_id}"
+
+    if _redis:
+        raw_entries = _redis.lrange(key, 0, -1)
+        _redis.delete(key)
+        detected_lang = _redis.get(lang_key) or ""
+        entries = [json.loads(e) for e in raw_entries] if raw_entries else []
+    else:
+        entries = _local_sessions.pop(f"__asr_{speaker}_{session_id}", [])
+        detected_lang = _local_sessions.pop(f"__asr_lang_{speaker}_{session_id}", "")
+
+    # Take the last non-empty transcript text
+    final_text = ""
+    for entry in reversed(entries):
+        if entry.get("text"):
+            final_text = entry["text"]
+            break
+
+    return final_text, detected_lang
+
+
+def _save_detected_language(session_id: str, speaker: str, language: str) -> None:
+    """Persist the ASR-detected language so it survives between turns."""
+    if not language:
+        return
+    if _redis:
+        _redis.setex(f"asr:lang:{speaker}:{session_id}", SESSION_TTL, language)
+    else:
+        _local_sessions[f"__asr_lang_{speaker}_{session_id}"] = language
+
+
+# ── WebSocket: Live ASR relay ─────────────────────────────────────────────────
+
+@app.websocket("/ws/asr/{session_id}/{speaker}")
+async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
+    """
+    Live ASR WebSocket endpoint — one connection per speaker per session.
+
+    Protocol (browser → server):
+      Binary frames  — raw PCM (pcm_s16le, 16kHz, mono) audio chunks
+                       sent continuously while the user is recording.
+      Text JSON      — control messages:
+        {"type": "stop_recording"}   stop recording, flush utterance,
+                                     trigger NMT+TTS pipeline
+
+    Protocol (server → browser):
+      {"type": "transcript_partial", "transcript": str}  — live partial update
+      {"type": "transcript_final",   "transcript": str}  — confirmed final text
+      {"type": "language_detected",  "language": str}    — detected BCP-47 code
+      {"type": "audio_chunk",  "data": b64, "format": "opus"}  — TTS chunk
+      {"type": "audio_end"}                              — all TTS chunks sent
+      {"type": "error",        "message": str}           — pipeline error
+
+    The Saaras WS (SarvamLiveASRAdapter) stays alive between turns.
+    Only the browser WS disconnecting triggers a close + cleanup.
+    """
+    if speaker not in ("a", "b"):
+        await websocket.close(code=1003, reason="speaker must be 'a' or 'b'")
+        return
+
+    await websocket.accept()
+    session_key = f"{session_id}:{speaker}"
+    print(f"[WS/ASR] Connected: session={session_id} speaker={speaker}")
+
+    # ── Create or reuse persistent Saaras connection ──────────────────
+    if session_key not in _live_asr_sessions:
+        adapter = SarvamLiveASRAdapter(API_KEY)
+        # Retrieve previously detected language for this speaker (if any)
+        detected_lang = ""
+        if _redis:
+            detected_lang = _redis.get(f"asr:lang:{speaker}:{session_id}") or ""
+        else:
+            detected_lang = _local_sessions.get(f"__asr_lang_{speaker}_{session_id}", "")
+
+        await adapter.start_session(language_hint=detected_lang or "auto")
+        _live_asr_sessions[session_key] = adapter
+        print(f"[WS/ASR] New Saaras session for {session_key}")
+    else:
+        adapter = _live_asr_sessions[session_key]
+        print(f"[WS/ASR] Reusing existing Saaras session for {session_key}")
+
+    # Determine target language (the OTHER speaker's language) from session store
+    def _get_tgt_lang() -> str:
+        state = load_session(session_id)
+        if not state:
+            return "en-IN"  # fallback
+        other = "b" if speaker == "a" else "a"
+        return state.get(f"lang_{other}") or "en-IN"
+
+    try:
+        while True:
+            msg = await websocket.receive()
+
+            # ── Binary frame: PCM audio chunk ─────────────────────────
+            if "bytes" in msg and msg["bytes"]:
+                await adapter.stream_chunk(msg["bytes"])
+
+            # ── Text frame: control message ───────────────────────────
+            elif "text" in msg and msg["text"]:
+                try:
+                    ctrl = json.loads(msg["text"])
+                except json.JSONDecodeError:
+                    continue
+
+                if ctrl.get("type") == "stop_recording":
+                    # ── Flush utterance & collect transcript ──────────
+                    final_text = ""
+                    detected_language = adapter.detected_language
+
+                    async for frame in adapter.flush_utterance():
+                        text = frame["transcript"]
+                        lang = frame["language"]
+                        is_partial = frame["is_partial"]
+
+                        # Buffer in Redis for audit / recovery
+                        _push_transcript(session_id, speaker, text, is_partial)
+
+                        # Update in-process language cache
+                        if lang:
+                            detected_language = lang
+                            _save_detected_language(session_id, speaker, lang)
+
+                        # Forward to browser for live UI update
+                        msg_type = "transcript_partial" if is_partial else "transcript_final"
+                        await websocket.send_json({
+                            "type": msg_type,
+                            "transcript": text,
+                        })
+
+                        if not is_partial:
+                            final_text = text
+
+                    # Send detected language to browser
+                    if detected_language:
+                        await websocket.send_json({
+                            "type": "language_detected",
+                            "language": detected_language,
+                            "speaker": speaker,
+                        })
+                        # Persist detected language into session state
+                        state = load_session(session_id)
+                        if state is not None:
+                            state[f"lang_{speaker}"] = detected_language
+                            save_session(
+                                session_id,
+                                state.get("lang_a"),
+                                state.get("lang_b"),
+                                state.get("pending_transcript_a"),
+                                state.get("pending_transcript_b"),
+                            )
+
+                    # ── NMT + TTS streaming pipeline ──────────────────
+                    if final_text:
+                        tgt_lang = _get_tgt_lang()
+
+                        # Build a lean pipeline for the streaming path
+                        from pipeline.single import SinglePipeline
+                        pipeline = SinglePipeline(
+                            asr_adapter  = _asr,
+                            nmt_adapter  = _nmt,
+                            tts_adapter  = _tts,
+                            src_language = detected_language or "auto",
+                            tgt_language = tgt_lang,
+                        )
+
+                        try:
+                            async for audio_chunk in pipeline.run_from_transcript(
+                                transcript   = final_text,
+                                src_language = detected_language or "auto",
+                            ):
+                                await websocket.send_json({
+                                    "type":   "audio_chunk",
+                                    "data":   base64.b64encode(audio_chunk).decode(),
+                                    "format": "opus",
+                                })
+                        except Exception as exc:
+                            print(f"[WS/ASR] Pipeline error: {exc}")
+                            await websocket.send_json({
+                                "type":    "error",
+                                "message": str(exc),
+                            })
+
+                        await websocket.send_json({"type": "audio_end"})
+
+    except WebSocketDisconnect:
+        # Browser disconnected — leave Saaras WS alive for quick reconnect.
+        # A reconnecting browser will reuse the same session_key.
+        print(f"[WS/ASR] Disconnected: {session_key} (Saaras WS kept alive)")
+    except Exception as exc:
+        print(f"[WS/ASR] Unexpected error ({session_key}): {exc}")
+        try:
+            await websocket.send_json({"type": "error", "message": str(exc)})
+        except Exception:
+            pass
 
 
 # ── Run ───────────────────────────────────────────────────────────────────────

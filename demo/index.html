@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bilingual Bidirectional Translation Architecture</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Bilingual Bidirectional Pipeline</h1>
+      <p>Cross-Language Detection & Buffered Translation Event</p>
+      <div class="tabs">
+        <button class="tab" data-arch="rest">Pure REST</button>
+        <button class="tab" data-arch="ws">Pure WebSocket</button>
+        <button class="tab active" data-arch="hybrid">Hybrid (Current)</button>
+      </div>
+      <div class="controls">
+        <button id="btn-start" class="btn btn-primary">Simulate Bidirectional Turn</button>
+        <button id="btn-reset" class="btn btn-secondary">Reset</button>
+      </div>
+    </header>
+
+    <div class="main-content">
+      
+      <!-- FLOWCHART CANVAS -->
+      <div class="flowchart" id="flowchart">
+        <svg id="arrows-svg" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+              <polygon points="0 0, 10 3.5, 0 7" fill="var(--arrow-color)"/>
+            </marker>
+            <marker id="arrowhead-active" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+              <polygon points="0 0, 10 3.5, 0 7" fill="var(--green)"/>
+            </marker>
+          </defs>
+          
+          <!-- Base arrows (Top Row: L -> R) -->
+          <path id="path-sa-asr" class="line" d="M 120 80 L 180 80" />
+          <path id="path-asr-nmt-top" class="line" d="M 300 80 L 390 80" />
+          <path id="path-nmt-tts-top" class="line" d="M 510 80 L 600 80" />
+          <path id="path-tts-lb" class="line" d="M 720 80 L 780 80" />
+
+          <!-- Base arrows (Bottom Row: R -> L) -->
+          <path id="path-sb-asr" class="line" d="M 780 520 L 720 520" />
+          <path id="path-asr-nmt-bot" class="line" d="M 600 520 L 510 520" />
+          <path id="path-nmt-tts-bot" class="line" d="M 390 520 L 300 520" />
+          <path id="path-tts-la" class="line" d="M 180 520 L 120 520" />
+          
+          <!-- Top ASR to Redis (Diagonal down-right) -->
+          <path id="path-asr-srca" class="line" d="M 240 110 L 290 180" />
+          <path id="path-asr-trana" class="line" d="M 270 110 L 370 180" />
+          <path id="path-srca-redis" class="line" d="M 310 220 L 400 270" />
+          <path id="path-trana-redis" class="line" d="M 390 220 L 430 250" />
+
+          <!-- Bottom ASR to Redis (Diagonal up-left) -->
+          <path id="path-asr-tranb" class="line" d="M 630 490 L 530 420" />
+          <path id="path-asr-srcb" class="line" d="M 660 490 L 610 420" />
+          <path id="path-tranb-redis" class="line" d="M 510 380 L 470 350" />
+          <path id="path-srcb-redis" class="line" d="M 590 380 L 500 330" />
+
+          <!-- Redis to Top NMT (Diagonal up-right) -->
+          <path id="path-redis-srcb-top" class="line" d="M 460 250 L 490 180" />
+          <path id="path-redis-trana-top" class="line" d="M 480 260 L 560 180" />
+          <path id="path-srcb-nmt-top" class="line" d="M 490 140 L 470 110" />
+          <path id="path-trana-nmt-top" class="line" d="M 560 140 L 490 110" />
+
+          <!-- Redis to Bottom NMT (Diagonal down-left) -->
+          <path id="path-redis-srca-bot" class="line" d="M 440 350 L 360 420" />
+          <path id="path-redis-tranb-bot" class="line" d="M 420 340 L 440 420" />
+          <path id="path-srca-nmt-bot" class="line" d="M 360 460 L 430 490" />
+          <path id="path-tranb-nmt-bot" class="line" d="M 440 460 L 450 490" />
+        </svg>
+
+        <!-- Nodes -->
+        <!-- TOP PIPELINE -->
+        <div class="node diamond" style="left: 80px; top: 80px;" id="node-speaker-a"><div class="inner">speaker<br>a</div></div>
+        <div class="node rect" style="left: 240px; top: 80px;" id="node-asr-top">asr</div>
+        <div class="node rect" style="left: 450px; top: 80px; width: 120px;" id="node-nmt-top">nmt</div>
+        <div class="node rect" style="left: 660px; top: 80px;" id="node-tts-top">tts</div>
+        <div class="node diamond" style="left: 820px; top: 80px;" id="node-listener-b"><div class="inner">listener<br>b</div></div>
+
+        <!-- TOP REDIS LABELS -->
+        <div class="node rounded" style="left: 300px; top: 200px;" id="node-src-lang-a">src_lang_a</div>
+        <div class="node rounded" style="left: 400px; top: 200px;" id="node-tran-a1">asr transcript</div>
+        
+        <div class="node rounded" style="left: 490px; top: 160px;" id="node-src-lang-b-top">src_lang_b</div>
+        <div class="node rounded" style="left: 590px; top: 160px;" id="node-tran-a2">asr transcript</div>
+
+        <!-- REDIS CORE -->
+        <div class="node box" style="left: 450px; top: 300px;" id="node-redis">
+          <div class="circle">redis<br>buffer<br>state</div>
+        </div>
+
+        <!-- BOTTOM REDIS LABELS -->
+        <div class="node rounded" style="left: 340px; top: 440px;" id="node-src-lang-a-bot">src_lang_a</div>
+        <div class="node rounded" style="left: 440px; top: 440px;" id="node-tran-b2">asr transcript</div>
+        
+        <div class="node rounded" style="left: 510px; top: 400px;" id="node-tran-b1">asr transcript</div>
+        <div class="node rounded" style="left: 610px; top: 400px;" id="node-src-lang-b">src_lang_b</div>
+
+        <!-- BOTTOM PIPELINE -->
+        <div class="node diamond" style="left: 820px; top: 520px;" id="node-speaker-b"><div class="inner">speaker<br>b</div></div>
+        <div class="node rect" style="left: 660px; top: 520px;" id="node-asr-bot">asr</div>
+        <div class="node rect" style="left: 450px; top: 520px; width: 120px;" id="node-nmt-bot">nmt</div>
+        <div class="node rect" style="left: 240px; top: 520px;" id="node-tts-bot">tts</div>
+        <div class="node diamond" style="left: 80px; top: 520px;" id="node-listener-a"><div class="inner">listener<br>a</div></div>
+
+      </div>
+
+      <!-- DUAL METRICS PANEL (MOVED BELOW) -->
+      <div class="metrics-bottom-container">
+        
+        <!-- PIPELINE A->B METRICS -->
+        <div class="metric-card" id="card-a-to-b">
+          <div class="card-title">hi-IN · translated (Pipeline A→B)</div>
+          <div class="audio-player">▶ 0:00 / 0:02</div>
+          <div class="latency-header">
+            ▼ Latency <span class="val-green" id="v-total-ab">0ms</span>
+          </div>
+
+          <div class="section-title">BROWSER</div>
+          <div class="metric-row"><span>upload</span><div class="bar-container"><div class="bar bar-blue"></div><span class="m-val" id="v-bro-upl-ab">0ms</span></div></div>
+          <div class="metric-row"><span>wait</span><div class="bar-container"><div class="bar bar-blue"></div><span class="m-val" id="v-bro-wat-ab">0ms</span></div></div>
+          <div class="metric-row"><span>parse</span><div class="bar-container"><div class="bar bar-blue"></div><span class="m-val" id="v-bro-prs-ab">0ms</span></div></div>
+          <div class="metric-row"><span>decode</span><div class="bar-container"><div class="bar bar-blue"></div><span class="m-val" id="v-bro-dec-ab">0ms</span></div></div>
+
+          <div class="section-title">SERVER</div>
+          <div class="metric-row"><span>session</span><div class="bar-container"><div class="bar bar-green"></div><span class="m-val" id="v-srv-ses-ab">0ms</span></div></div>
+          <div class="metric-row"><span>build</span><div class="bar-container"><div class="bar bar-green"></div><span class="m-val" id="v-srv-bld-ab">0ms</span></div></div>
+          <div class="metric-row"><span>response</span><div class="bar-container"><div class="bar bar-green"></div><span class="m-val" id="v-srv-res-ab">0ms</span></div></div>
+          <div class="metric-row"><span>save</span><div class="bar-container"><div class="bar bar-green"></div><span class="m-val" id="v-srv-sav-ab">0ms</span></div></div>
+          <div class="metric-row"><span>log</span><div class="bar-container"><div class="bar bar-green"></div><span class="m-val" id="v-srv-log-ab">0ms</span></div></div>
+
+          <div class="section-title">ASR · SAARAS V3</div>
+          <div class="metric-row"><span>tcp</span><div class="bar-container"><div class="bar bar-purple"></div><span class="m-val" id="v-asr-tcp-ab">0ms</span></div></div>
+          <div class="metric-row"><span>api</span><div class="bar-container"><div class="bar bar-purple"></div><span class="m-val" id="v-asr-api-ab">0ms</span></div></div>
+          <div class="metric-row"><span>parse</span><div class="bar-container"><div class="bar bar-purple"></div><span class="m-val" id="v-asr-prs-ab">0ms</span></div></div>
+
+          <div class="section-title">NMT · SARVAM-TRANSLATE</div>
+          <div class="metric-row"><span>tcp</span><div class="bar-container"><div class="bar bar-purple"></div><span class="m-val" id="v-nmt-tcp-ab">0ms</span></div></div>
+          <div class="metric-row"><span>api</span><div class="bar-container"><div class="bar bar-purple"></div><span class="m-val" id="v-nmt-api-ab">0ms</span></div></div>
+          <div class="metric-row"><span>parse</span><div class="bar-container"><div class="bar bar-purple"></div><span class="m-val" id="v-nmt-prs-ab">0ms</span></div></div>
+
+          <div class="section-title">TTS · BULBUL V3</div>
+          <div class="metric-row"><span>tcp</span><div class="bar-container"><div class="bar bar-purple"></div><span class="m-val" id="v-tts-tcp-ab">0ms</span></div></div>
+          <div class="metric-row"><span>api</span><div class="bar-container"><div class="bar bar-purple"></div><span class="m-val" id="v-tts-api-ab">0ms</span></div></div>
+          <div class="metric-row"><span>parse</span><div class="bar-container"><div class="bar bar-purple"></div><span class="m-val" id="v-tts-prs-ab">0ms</span></div></div>
+        </div>
+
+        <!-- PIPELINE B->A METRICS -->
+        <div class="metric-card" id="card-b-to-a">
+          <div class="card-title">en-IN · translated (Pipeline B→A)</div>
+          <div class="audio-player">▶ 0:00 / 0:02</div>
+          <div class="latency-header">
+            ▼ Latency <span class="val-green" id="v-total-ba">0ms</span>
+          </div>
+
+          <div class="section-title">BROWSER</div>
+          <div class="metric-row"><span>upload</span><div class="bar-container"><div class="bar bar-blue"></div><span class="m-val" id="v-bro-upl-ba">0ms</span></div></div>
+          <div class="metric-row"><span>wait</span><div class="bar-container"><div class="bar bar-blue"></div><span class="m-val" id="v-bro-wat-ba">0ms</span></div></div>
+          <div class="metric-row"><span>parse</span><div class="bar-container"><div class="bar bar-blue"></div><span class="m-val" id="v-bro-prs-ba">0ms</span></div></div>
+          <div class="metric-row"><span>decode</span><div class="bar-container"><div class="bar bar-blue"></div><span class="m-val" id="v-bro-dec-ba">0ms</span></div></div>
+
+          <div class="section-title">SERVER</div>
+          <div class="metric-row"><span>session</span><div class="bar-container"><div class="bar bar-green"></div><span class="m-val" id="v-srv-ses-ba">0ms</span></div></div>
+          <div class="metric-row"><span>build</span><div class="bar-container"><div class="bar bar-green"></div><span class="m-val" id="v-srv-bld-ba">0ms</span></div></div>
+          <div class="metric-row"><span>response</span><div class="bar-container"><div class="bar bar-green"></div><span class="m-val" id="v-srv-res-ba">0ms</span></div></div>
+          <div class="metric-row"><span>save</span><div class="bar-container"><div class="bar bar-green"></div><span class="m-val" id="v-srv-sav-ba">0ms</span></div></div>
+          <div class="metric-row"><span>log</span><div class="bar-container"><div class="bar bar-green"></div><span class="m-val" id="v-srv-log-ba">0ms</span></div></div>
+
+          <div class="section-title">ASR · SAARAS V3</div>
+          <div class="metric-row"><span>tcp</span><div class="bar-container"><div class="bar bar-purple"></div><span class="m-val" id="v-asr-tcp-ba">0ms</span></div></div>
+          <div class="metric-row"><span>api</span><div class="bar-container"><div class="bar bar-purple"></div><span class="m-val" id="v-asr-api-ba">0ms</span></div></div>
+          <div class="metric-row"><span>parse</span><div class="bar-container"><div class="bar bar-purple"></div><span class="m-val" id="v-asr-prs-ba">0ms</span></div></div>
+
+          <div class="section-title">NMT · SARVAM-TRANSLATE</div>
+          <div class="metric-row"><span>tcp</span><div class="bar-container"><div class="bar bar-purple"></div><span class="m-val" id="v-nmt-tcp-ba">0ms</span></div></div>
+          <div class="metric-row"><span>api</span><div class="bar-container"><div class="bar bar-purple"></div><span class="m-val" id="v-nmt-api-ba">0ms</span></div></div>
+          <div class="metric-row"><span>parse</span><div class="bar-container"><div class="bar bar-purple"></div><span class="m-val" id="v-nmt-prs-ba">0ms</span></div></div>
+
+          <div class="section-title">TTS · BULBUL V3</div>
+          <div class="metric-row"><span>tcp</span><div class="bar-container"><div class="bar bar-purple"></div><span class="m-val" id="v-tts-tcp-ba">0ms</span></div></div>
+          <div class="metric-row"><span>api</span><div class="bar-container"><div class="bar bar-purple"></div><span class="m-val" id="v-tts-api-ba">0ms</span></div></div>
+          <div class="metric-row"><span>parse</span><div class="bar-container"><div class="bar bar-purple"></div><span class="m-val" id="v-tts-prs-ba">0ms</span></div></div>
+        </div>
+
+      </div>
+      
+    </div>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>

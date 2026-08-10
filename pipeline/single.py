@@ -3,25 +3,29 @@ pipeline/single.py
 ──────────────────
 One-way translation pipeline: audio_in → transcript → translation → audio_out
 
-This is the simplest pipeline. It runs three adapters in sequence:
-  ASR → NMT → TTS
+Two pipeline entry points:
 
-Languages are HARDCODED at construction time for the PoC.
-The router + resolver (not yet built) will replace the hardcoded values later.
+run()               — legacy file-based path: takes audio bytes, runs ASR+NMT+TTS,
+                      returns a PipelineResult. Used by /translate/* REST endpoints.
+
+run_from_transcript() — live streaming path (NEW): ASR is already done via the
+                        persistent live WebSocket. Takes a ready transcript string,
+                        runs NMT, then streams TTS chunks as an async generator.
+                        First audio byte arrives ~100–200ms after call.
 
 Usage:
-    pipeline = SinglePipeline(
-        asr_adapter=SarvamASRAdapter(api_key),
-        nmt_adapter=SarvamNMTAdapter(api_key),
-        tts_adapter=SarvamTTSAdapter(api_key),
-        src_language="hi-IN",
-        tgt_language="ta-IN",
-    )
+    # Legacy (REST path)
+    pipeline = SinglePipeline(...)
     result = await pipeline.run(audio_bytes, audio_format="wav")
+
+    # Live streaming path
+    async for chunk in pipeline.run_from_transcript(transcript, src_language):
+        await ws.send_json({"type": "audio_chunk", "data": b64encode(chunk)})
 """
 
 import time
 from dataclasses import dataclass
+from typing import AsyncIterator, Optional
 
 from adapter.base import BaseASRAdapter, BaseNMTAdapter, BaseTTSAdapter
 from pipeline.types import (
@@ -122,3 +126,47 @@ class SinglePipeline:
             total_latency_ms  = total_ms,
             timing            = timing,
         )
+
+    async def run_from_transcript(
+        self,
+        transcript:   str,
+        src_language: str,
+        voice_gender: str = "female",
+    ) -> AsyncIterator[bytes]:
+        """
+        Live streaming path — ASR is already done via the persistent WS.
+        Takes a ready final transcript, runs NMT, then streams TTS opus chunks.
+
+        Yields raw opus bytes as each chunk arrives from Bulbul v3.
+        First byte arrives in ~100–200ms (NMT) + ~100ms (TTS first chunk).
+        Caller should forward each chunk to the browser immediately over WS.
+
+        Args:
+            transcript:   Final transcript from SarvamLiveASRAdapter.flush_utterance()
+            src_language: Detected source language (BCP-47 e.g. "hi-IN")
+            voice_gender: "female" or "male" (default "female")
+
+        Yields:
+            bytes — decoded opus audio chunks, each 20–80ms of audio
+        """
+        # ── Step 1: NMT — translate the final transcript ──────────────
+        # This is a single REST call (~200-400ms). No ASR step here.
+        nmt_output = await self.nmt_adapter.translate(
+            NMTInput(
+                text         = transcript,
+                src_language = src_language,
+                tgt_language = self.tgt_language,
+            )
+        )
+
+        # ── Step 2: TTS streaming — yield chunks as they arrive ───────
+        # synthesise_streaming() is an async generator that yields each
+        # opus chunk immediately as it decodes from the Bulbul v3 WS.
+        async for chunk in self.tts_adapter.synthesise_streaming(
+            TTSInput(
+                text         = nmt_output.translated_text,
+                language     = self.tgt_language,
+                voice_gender = voice_gender,
+            )
+        ):
+            yield chunk

@@ -140,3 +140,53 @@ class SarvamTTSAdapter(BaseTTSAdapter):
             api_ms=api_ms,
             parse_ms=parse_ms,
         )
+
+    async def synthesise_streaming(self, tts_input: TTSInput):
+        """
+        Async generator — yields raw opus audio bytes as chunks arrive from Bulbul v3.
+
+        Unlike synthesise() which waits for all chunks before returning,
+        this yields each chunk immediately as it is decoded from the WS.
+        The first chunk arrives in ~100–200ms, enabling the browser to start
+        playing audio long before the full synthesis is complete.
+
+        Usage:
+            async for chunk in tts_adapter.synthesise_streaming(tts_input):
+                await websocket.send_bytes(chunk)   # browser plays immediately
+
+        Raises ValueError if the language is not supported by Bulbul v3.
+        """
+        if tts_input.language not in _BULBUL_V3_LANGS:
+            raise ValueError(
+                f"Bulbul v3 does not support '{tts_input.language}'. "
+                f"Supported languages: {sorted(_BULBUL_V3_LANGS)}."
+            )
+
+        gender = getattr(tts_input, "voice_gender", "female")
+        speaker = self._get_speaker(tts_input.language, gender)
+        chunk_count = 0
+
+        async with self._client.text_to_speech_streaming.connect(
+            model="bulbul:v3",
+            send_completion_event=True,
+        ) as ws:
+            await ws.configure(
+                target_language_code=tts_input.language,
+                speaker=speaker,
+                output_audio_codec="opus",
+                speech_sample_rate=24000,
+                pace=getattr(tts_input, "pace", 1.0),
+            )
+            await ws.convert(tts_input.text)
+            await ws.flush()
+
+            async for message in ws:
+                if isinstance(message, AudioOutput):
+                    chunk = base64.b64decode(message.data.audio)
+                    chunk_count += 1
+                    yield chunk  # ← caller receives this immediately, no buffering
+                elif isinstance(message, EventResponse):
+                    if message.data.event_type == "final":
+                        break  # All chunks sent — clean exit
+
+        print(f"[TTS-stream] text len: {len(tts_input.text)} | chunks: {chunk_count} | lang: {tts_input.language}")

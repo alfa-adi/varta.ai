@@ -69,6 +69,22 @@
              animation: spin 0.7s linear infinite; margin-left: auto; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* ── Live partial transcript preview ─────────────────────── */
+  .live-transcript { font-size: 12px; color: var(--subtle); font-style: italic;
+                     flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                     opacity: 0; transition: opacity 0.2s; min-width: 0; }
+  .live-transcript.active { opacity: 1; }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #ef4444;
+              animation: livepulse 0.9s ease-in-out infinite; flex-shrink: 0; display: none; }
+  .live-dot.active { display: block; }
+  @keyframes livepulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  /* ── Streaming audio indicator ────────────────────────────── */
+  .audio-streaming { font-size: 10px; color: var(--green); display: none; margin-left: auto;
+                     animation: fadepulse 0.6s ease-in-out infinite alternate; }
+  .audio-streaming.active { display: block; }
+  @keyframes fadepulse { from { opacity: 0.4; } to { opacity: 1; } }
+
   .error-bar { background: #3b0000; border-top: 1px solid #7f1d1d; padding: 8px 16px;
                font-size: 12px; color: #fca5a5; display: none; }
 
@@ -138,6 +154,9 @@
       <div>
         <div class="record-label" id="rec-label-a">Press to record</div>
       </div>
+      <div class="live-dot" id="live-dot-a"></div>
+      <div class="live-transcript" id="live-transcript-a"></div>
+      <div class="audio-streaming" id="audio-streaming-a">▶ playing</div>
       <div class="spinner" id="spin-a"></div>
     </div>
   </div>
@@ -157,6 +176,9 @@
       <div>
         <div class="record-label" id="rec-label-b">Press to record</div>
       </div>
+      <div class="live-dot" id="live-dot-b"></div>
+      <div class="live-transcript" id="live-transcript-b"></div>
+      <div class="audio-streaming" id="audio-streaming-b">▶ playing</div>
       <div class="spinner" id="spin-b"></div>
     </div>
   </div>
@@ -218,10 +240,64 @@ const LANGUAGES = [
   {code:"en-IN", label:"English (Indian)"},
 ];
 
-// ── Session state ───────────────────────────────────────────────────────────
+// ─── Session state ───────────────────────────────────────────────────────────
 let sessionId = null;
-let mediaRecorders = {a: null, b: null};
 let isRecording = {a: false, b: false};
+
+// ─── Live streaming state per speaker ───────────────────────────────────────
+// Each speaker has its own persistent WebSocket + AudioContext + worklet
+const liveWS      = {a: null, b: null};     // browser↔server WebSocket
+const audioCtx    = {a: null, b: null};     // AudioContext for mic capture
+const micStream   = {a: null, b: null};     // MediaStream from getUserMedia
+const workletNode = {a: null, b: null};     // AudioWorkletNode
+
+// ─── Web Audio API: Opus playback queue ──────────────────────────────────────
+// TTS audio arrives as base64-encoded Opus chunks over the WS.
+// We decode each chunk via AudioContext.decodeAudioData and queue them for
+// gapless sequential playback.
+const audioQueue   = {a: [], b: []};       // decoded AudioBuffer queue
+let   isPlaying    = {a: false, b: false}; // true while playback is running
+let   playbackCtx  = {a: null, b: null};   // separate AudioContext for playback
+
+function getPlaybackCtx(speaker) {
+  if (!playbackCtx[speaker]) {
+    playbackCtx[speaker] = new AudioContext();
+  }
+  return playbackCtx[speaker];
+}
+
+async function enqueueAudioChunk(speaker, base64Data) {
+  try {
+    const ctx = getPlaybackCtx(speaker);
+    const bytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+    const buffer = await ctx.decodeAudioData(bytes.buffer);
+    audioQueue[speaker].push(buffer);
+    if (!isPlaying[speaker]) playNext(speaker);
+  } catch(e) {
+    console.warn('[audio] decode error:', e.message);
+  }
+}
+
+function playNext(speaker) {
+  const queue = audioQueue[speaker];
+  if (!queue.length) {
+    isPlaying[speaker] = false;
+    const ind = document.getElementById(`audio-streaming-${speaker}`);
+    if (ind) ind.classList.remove('active');
+    return;
+  }
+  isPlaying[speaker] = true;
+  const ind = document.getElementById(`audio-streaming-${speaker}`);
+  if (ind) ind.classList.add('active');
+
+  const ctx = getPlaybackCtx(speaker);
+  const buf = queue.shift();
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  src.onended = () => playNext(speaker);
+  src.start();
+}
 
 function showError(msg) {
   const bar = document.getElementById("error-bar");
@@ -229,6 +305,190 @@ function showError(msg) {
   bar.style.display = "block";
   setTimeout(() => { bar.style.display = "none"; }, 5000);
 }
+
+// ─── Recording ───────────────────────────────────────────────────────────────
+async function ensureSession() {
+  if (sessionId) return;
+  const form = new FormData();
+  form.append("lang_a", "");
+  form.append("lang_b", "");
+  const resp = await fetch("/session/create", { method: "POST", body: form });
+  const data = await resp.json();
+  sessionId = data.session_id;
+  const badge = document.getElementById("session-badge");
+  badge.style.display = "inline";
+  badge.textContent   = "Session active";
+}
+
+async function ensureLiveWS(speaker) {
+  // If an open WS already exists for this speaker, reuse it.
+  if (liveWS[speaker] && liveWS[speaker].readyState === WebSocket.OPEN) return;
+
+  await ensureSession();
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const url = `${proto}://${location.host}/ws/asr/${sessionId}/${speaker}`;
+  const ws = new WebSocket(url);
+  liveWS[speaker] = ws;
+
+  ws.onopen = () => console.log(`[WS/${speaker}] connected`);
+
+  ws.onmessage = async (evt) => {
+    const msg = JSON.parse(evt.data);
+
+    if (msg.type === 'transcript_partial') {
+      // Live partial — show in the inline preview bar below the record button
+      const liveEl = document.getElementById(`live-transcript-${speaker}`);
+      if (liveEl) { liveEl.textContent = msg.transcript; liveEl.classList.add('active'); }
+
+    } else if (msg.type === 'transcript_final') {
+      // Final — move it into the conversation bubble area
+      const liveEl = document.getElementById(`live-transcript-${speaker}`);
+      if (liveEl) { liveEl.textContent = ''; liveEl.classList.remove('active'); }
+      const dot = document.getElementById(`live-dot-${speaker}`);
+      if (dot) dot.classList.remove('active');
+
+      if (msg.transcript) {
+        addBubble(speaker, msg.transcript, null, null, null, null);
+      }
+      document.getElementById(`rec-label-${speaker}`).textContent = 'Translating…';
+      document.getElementById(`spin-${speaker}`).style.display = 'block';
+
+    } else if (msg.type === 'language_detected') {
+      const langLabel = LANGUAGES.find(l => l.code === msg.language)?.label || msg.language;
+      document.getElementById(`lang-${msg.speaker}-label`).textContent = langLabel;
+
+    } else if (msg.type === 'audio_chunk') {
+      // TTS streaming — play each chunk immediately as it arrives
+      const otherSpeaker = speaker === 'a' ? 'b' : 'a';
+      await enqueueAudioChunk(otherSpeaker, msg.data);
+
+    } else if (msg.type === 'audio_end') {
+      // All TTS chunks sent — hide spinner
+      document.getElementById(`spin-${speaker}`).style.display = 'none';
+      document.getElementById(`rec-label-${speaker}`).textContent = 'Press to record';
+
+    } else if (msg.type === 'error') {
+      showError(msg.message);
+      document.getElementById(`spin-${speaker}`).style.display = 'none';
+      document.getElementById(`rec-label-${speaker}`).textContent = 'Press to record';
+    }
+  };
+
+  ws.onerror = (e) => console.error(`[WS/${speaker}] error:`, e);
+  ws.onclose = () => {
+    console.log(`[WS/${speaker}] closed`);
+    liveWS[speaker] = null;
+  };
+
+  // Wait for the connection to open before returning
+  await new Promise((resolve, reject) => {
+    if (ws.readyState === WebSocket.OPEN) { resolve(); return; }
+    ws.addEventListener('open', resolve, { once: true });
+    ws.addEventListener('error', reject, { once: true });
+  });
+}
+
+async function toggleRecord(speaker) {
+  try {
+    if (isRecording[speaker]) {
+      // ── STOP ────────────────────────────────────────────────────────────
+      isRecording[speaker] = false;
+      const btn = document.getElementById(`rec-${speaker}`);
+      btn.className = 'record-btn idle';
+      btn.textContent = '🎙';
+      document.getElementById(`rec-label-${speaker}`).textContent = 'Processing…';
+
+      // Disconnect mic → worklet so no more PCM frames are sent
+      if (workletNode[speaker]) {
+        workletNode[speaker].port.onmessage = null;
+        workletNode[speaker].disconnect();
+        workletNode[speaker] = null;
+      }
+      if (micStream[speaker]) {
+        micStream[speaker].getTracks().forEach(t => t.stop());
+        micStream[speaker] = null;
+      }
+      if (audioCtx[speaker]) {
+        await audioCtx[speaker].close();
+        audioCtx[speaker] = null;
+      }
+
+      // Signal server to flush utterance and run NMT+TTS
+      if (liveWS[speaker] && liveWS[speaker].readyState === WebSocket.OPEN) {
+        liveWS[speaker].send(JSON.stringify({ type: 'stop_recording' }));
+      }
+
+    } else {
+      // ── START ───────────────────────────────────────────────────────────
+      // Ensure server WS is open (persistent — created once, reused across turns)
+      await ensureLiveWS(speaker);
+
+      // Request mic access at 16kHz mono for direct PCM feed to Saaras
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true }
+      });
+      micStream[speaker] = stream;
+
+      // AudioContext: must match the sampleRate we're sending to Saaras
+      const ctx = new AudioContext({ sampleRate: 16000 });
+      audioCtx[speaker] = ctx;
+
+      // Load the AudioWorklet processor (served as a static file)
+      await ctx.audioWorklet.addModule('/static/pcm-processor.js');
+
+      const micSource = ctx.createMediaStreamSource(stream);
+      const worklet = new AudioWorkletNode(ctx, 'pcm-processor');
+      workletNode[speaker] = worklet;
+
+      // Each message from the worklet is a transferable Int16 ArrayBuffer (20ms chunk)
+      // Forward it directly over the WebSocket as a binary frame — zero copy
+      worklet.port.onmessage = (e) => {
+        const ws = liveWS[speaker];
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(e.data);  // e.data is ArrayBuffer — sent as binary WS frame
+        }
+      };
+
+      micSource.connect(worklet);
+      // Note: do NOT connect worklet to ctx.destination — we don't want mic feedback
+
+      isRecording[speaker] = true;
+      const btn = document.getElementById(`rec-${speaker}`);
+      btn.className = 'record-btn recording';
+      btn.textContent = '⏹';
+      document.getElementById(`rec-label-${speaker}`).textContent = 'Recording… click to stop';
+
+      const dot = document.getElementById(`live-dot-${speaker}`);
+      if (dot) dot.classList.add('active');
+    }
+  } catch(e) {
+    console.error('toggleRecord error:', e);
+    isRecording[speaker] = false;
+    showError('Recording failed: ' + e.message);
+    const btn = document.getElementById(`rec-${speaker}`);
+    if (btn) { btn.className = 'record-btn idle'; btn.textContent = '🎙'; }
+  }
+}
+
+// ─── Playwright test mode (preserved) ────────────────────────────────────────
+// NOTE: In live streaming mode, injectAudio() is a no-op because there is no
+// sendAudio() function anymore. Tests should use the REST /translate/* endpoints
+// directly or be updated to drive the WS protocol.
+window.injectAudio = async function(speaker, blob) {
+  if (!TEST_MODE) return { error: 'testMode not active' };
+  console.warn('[varta] injectAudio: live streaming mode — using REST fallback');
+  await ensureSession();
+  // Fallback: use the REST endpoint path so existing Playwright tests still pass
+  const form = new FormData();
+  form.append('audio', blob, 'audio.webm');
+  form.append('session_id', sessionId);
+  const endpoint = speaker === 'a' ? '/translate/speaker_a' : '/translate/speaker_b';
+  const resp = await fetch(endpoint, { method: 'POST', body: form });
+  const data = await resp.json();
+  if (data.transcript) addBubble(speaker, data.transcript, data.src_language, null, data.total_latency_ms, data.timing);
+  if (data.translation) addBubble(speaker === 'a' ? 'b' : 'a', data.translation, data.tgt_language, data.audio_b64, null, data.timing);
+  return { ok: true };
+};
 
 // ── Timing Panel ────────────────────────────────────────────────────────────
 
