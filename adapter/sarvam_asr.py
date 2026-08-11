@@ -27,6 +27,7 @@ from typing import AsyncIterator
 
 import websockets
 import websockets.exceptions
+from websockets.connection import State as _WSState
 
 from .base import BaseASRAdapter
 from pipeline.types import ASRInput, ASROutput
@@ -247,7 +248,7 @@ class SarvamLiveASRAdapter:
         Called ~50 times/sec (20ms chunks) while the user is recording.
         Fire-and-forget — no response expected per chunk.
         """
-        if self._ws and not self._ws.closed:
+        if self._ws and self._ws.state == _WSState.OPEN:
             await self._ws.send(pcm_bytes)  # binary frame, no base64 encoding
 
     async def flush_utterance(self) -> AsyncIterator[dict]:
@@ -260,7 +261,7 @@ class SarvamLiveASRAdapter:
 
         The WS stays open after the final frame — ready for next utterance.
         """
-        if not self._ws or self._ws.closed:
+        if not self._ws or self._ws.state != _WSState.OPEN:
             return
 
         # Send flush signal — Saaras will finalize the current utterance
@@ -335,6 +336,6 @@ class SarvamLiveASRAdapter:
                 await self._reader_task
             except asyncio.CancelledError:
                 pass
-        if self._ws and not self._ws.closed:
+        if self._ws and self._ws.state == _WSState.OPEN:
             await self._ws.close()
             print("[LiveASR] Session closed")
