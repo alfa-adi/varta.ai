@@ -1075,8 +1075,18 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
                                 "type":    "error",
                                 "message": str(exc),
                             })
+                    else:
+                        # No speech detected — Saaras returned empty transcript.
+                        # Still need to reset the UI on the browser side.
+                        await websocket.send_json({
+                            "type":    "error",
+                            "message": "No speech detected. Please try again.",
+                        })
 
-                        await websocket.send_json({"type": "audio_end"})
+                    # ALWAYS send audio_end — this is what releases the browser
+                    # from the 'Processing...' state, regardless of whether
+                    # there was any speech or audio to play.
+                    await websocket.send_json({"type": "audio_end"})
 
     except WebSocketDisconnect:
         # Browser disconnected — leave Saaras WS alive for quick reconnect.
