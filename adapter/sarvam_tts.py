@@ -5,8 +5,6 @@ Replaces the REST JSON POST (benchmarked at ~3380ms avg, the dominant bottleneck
 with WebSocket streaming via the sarvamai Python SDK. Audio chunks stream back
 as they are generated, rather than waiting for full synthesis before returning.
 
-Also applies Fix 2: Opus codec replaces MP3, saving ~150–200ms browser decode time.
-
 Expected latency improvement: ~3380ms REST → ~800–1200ms WS (to last chunk).
 
 API reference:
@@ -101,9 +99,9 @@ class SarvamTTSAdapter(BaseTTSAdapter):
             await ws.configure(
                 target_language_code=tts_input.language,
                 speaker=speaker,
-                output_audio_codec="opus",   # Fix 2: Opus saves ~150-200ms vs mp3
-                speech_sample_rate=24000,    # OPUS codec requires 24000 (or 16k etc)
-                pace=getattr(tts_input, "pace", 1.0),                    # Normal speed; adjust if needed
+                output_audio_codec="mp3",    # Reverted to mp3 for Web Audio API compatibility
+                speech_sample_rate=24000,
+                pace=getattr(tts_input, "pace", 1.0),
             )
 
             await ws.convert(tts_input.text)
@@ -132,7 +130,7 @@ class SarvamTTSAdapter(BaseTTSAdapter):
 
         return TTSOutput(
             audio_bytes=audio_bytes,
-            audio_format="opus",  # Updated from "mp3" — browser must handle Opus
+            audio_format="mp3",   # Changed back to mp3
             language=tts_input.language,
             latency_ms=latency_ms,
             model_id="sarvam/bulbul-v3",
@@ -143,7 +141,7 @@ class SarvamTTSAdapter(BaseTTSAdapter):
 
     async def synthesise_streaming(self, tts_input: TTSInput):
         """
-        Async generator — yields raw opus audio bytes as chunks arrive from Bulbul v3.
+        Async generator — yields raw mp3 audio bytes as chunks arrive from Bulbul v3.
 
         Unlike synthesise() which waits for all chunks before returning,
         this yields each chunk immediately as it is decoded from the WS.
@@ -173,7 +171,7 @@ class SarvamTTSAdapter(BaseTTSAdapter):
             await ws.configure(
                 target_language_code=tts_input.language,
                 speaker=speaker,
-                output_audio_codec="opus",
+                output_audio_codec="mp3",
                 speech_sample_rate=24000,
                 pace=getattr(tts_input, "pace", 1.0),
             )

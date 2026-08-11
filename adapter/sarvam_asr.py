@@ -184,99 +184,133 @@ class SarvamASRAdapter(BaseASRAdapter):
         )
 
 
-# ── Live streaming adapter (persistent WS, realtime endpoint) ─────────────────
+# ── Live streaming adapter (persistent WS, SDK-confirmed protocol) ─────────────
 
 class SarvamLiveASRAdapter:
     """
-    Persistent WebSocket connection to Saaras v3 realtime ASR.
+    Persistent WebSocket connection to Saaras v3 streaming ASR.
 
-    Lifecycle:
-      1. Call start_session() once — opens WS, sends config, starts bg reader.
-      2. While user is recording: call stream_chunk(pcm_bytes) for each 20ms packet.
-      3. On stop: call flush_utterance() — async-iterates partial/final transcripts.
-         The WS stays open after flush — ready for the next utterance immediately.
-      4. Call close() when the session ends (browser disconnects permanently).
+    Protocol confirmed directly from sarvam API documentation:
 
-    Audio spec: pcm_s16le, 16kHz, mono. Browser AudioWorklet produces this directly.
-    No file conversion at any point.
+    Send audio:
+        {"event": "audio_input", "audio": "<base64-pcm>"}
+
+    Send flush:
+        {"event": "speech_end"}
+
+    Receive (per frame):
+        {"event": "transcript.partial", "text": "...", "language": "..."}
+        {"event": "transcript.final", "text": "...", "language": "...", "language_confidence": ...}
+
+    URL: wss://api.sarvam.ai/speech-to-text-realtime/ws
+    Query params: model=saaras:v3-realtime, encoding=linear16, sample_rate=16000, endpointing=manual
 
     One instance per speaker per session, stored in server._live_asr_sessions.
+    The WS stays open between turns — only closed when browser session ends.
     """
 
     def __init__(self, api_key: str):
         self._api_key = api_key
-        self._ws = None                   # websockets connection handle
-        self._recv_queue: asyncio.Queue = None  # decoded JSON frames from Saaras
-        self._reader_task: asyncio.Task = None  # background frame reader
+        self._ws = None                        # websockets connection handle
+        self._recv_queue: asyncio.Queue = None # decoded JSON frames from Saaras
+        self._reader_task: asyncio.Task = None # background frame reader
         self._detected_language: str = ""
+        self._in_utterance: bool = False
 
-    async def start_session(self, language_hint: str = "auto") -> None:
+    def _is_open(self) -> bool:
+        """Check if WS is connected and usable."""
+        if self._ws is None:
+            return False
+        try:
+            # Works for both legacy (has .open) and new (has .state) websockets
+            if hasattr(self._ws, 'open'):
+                return self._ws.open
+            return self._ws.state == _WSState.OPEN
+        except Exception:
+            return False
+
+    async def start_session(self, language_hint: str = "unknown") -> None:
         """
-        Open a persistent WS to saaras:v3-realtime and configure it.
-        Call once per session/speaker. Blocks until the WS handshake completes.
+        Open a persistent WS to saaras:v3 streaming and start bg reader.
+        Call once per session/speaker.
+
+        language_hint: BCP-47 code (e.g. "hi-IN") or "unknown" for auto-detect.
         """
         query_dict = {
-            "model": "saaras:v3-realtime",
-            "input_audio_codec": "pcm_s16le",
-            "sample_rate": str(_WAV_SAMPLE_RATE),
+            "model":         "saaras:v3-realtime",
+            "encoding":      "linear16",
+            "sample_rate":   str(_WAV_SAMPLE_RATE),
+            "language_code": language_hint if language_hint else "auto",
+            "endpointing":   "manual",
         }
-        if language_hint and language_hint != "auto":
-            query_dict["language-code"] = language_hint
-            
         params = urllib.parse.urlencode(query_dict)
         url = f"{_REALTIME_WS_URL}?{params}"
         headers = {"Api-Subscription-Key": self._api_key}
 
         self._recv_queue = asyncio.Queue()
-        self._ws = await websockets.connect(
-            url,
-            additional_headers=headers,
-            ping_interval=20,
-            ping_timeout=10,
-            open_timeout=15,
-        )
-        # Background task drains all incoming Saaras frames into the queue.
-        # This prevents the WS receive buffer from filling up between flushes.
+
+        # Use legacy websockets connect — same as SDK (extra_headers for v14+,
+        # additional_headers for v12/v13). Try both.
+        try:
+            self._ws = await websockets.connect(
+                url,
+                extra_headers=headers,
+                ping_interval=20,
+                ping_timeout=10,
+                open_timeout=15,
+            )
+        except TypeError:
+            # Older websockets versions use additional_headers
+            self._ws = await websockets.connect(
+                url,
+                additional_headers=headers,
+                ping_interval=20,
+                ping_timeout=10,
+                open_timeout=15,
+            )
+
         self._reader_task = asyncio.create_task(
-            self._background_reader(), name="saaras-reader"
+            self._background_reader(), name="saaras-bg-reader"
         )
-        print(f"[LiveASR] Session opened → {url}")
+        print(f"[LiveASR] Session opened -> {url}")
 
     async def stream_chunk(self, pcm_bytes: bytes) -> None:
         """
-        Forward a PCM chunk to Saaras v3-realtime.
-        The realtime API expects JSON text frames, NOT raw binary:
-          {"event": "audio_input", "audio": "<base64-encoded PCM>"}
+        Forward a PCM chunk to Saaras.
+        Wraps raw PCM bytes as base64 inside the SDK's AudioMessage format.
         Called ~50 times/sec (20ms chunks) while user is recording.
         """
-        if self._ws and self._ws.state == _WSState.OPEN:
-            payload = json.dumps({
-                "event": "audio_input",
-                "audio": base64.b64encode(pcm_bytes).decode(),
-            })
-            await self._ws.send(payload)  # JSON text frame
+        if not self._is_open():
+            return
+
+        if not self._in_utterance:
+            await self._ws.send(json.dumps({"event": "speech_start"}))
+            self._in_utterance = True
+
+        payload = json.dumps({
+            "event": "audio_input",
+            "audio": base64.b64encode(pcm_bytes).decode()
+        })
+        await self._ws.send(payload)
 
     async def flush_utterance(self) -> AsyncIterator[dict]:
         """
         Signal end of utterance. Yields transcript dicts until the final
-        transcript arrives from Saaras.
+        transcript arrives.
 
-        Each yielded dict:
-          { "transcript": str, "is_partial": bool, "language": str }
-
-        The WS stays open after the final frame — ready for next utterance.
+        Each yielded dict: { "transcript": str, "is_partial": bool, "language": str }
+        The WS stays open after flush — ready for the next utterance.
         """
-        if not self._ws or self._ws.state != _WSState.OPEN:
+        if not self._is_open():
+            print("[LiveASR] flush_utterance called but WS is not open — returning")
             return
 
-        # Send flush signal — Saaras v3-realtime event protocol
-        await self._ws.send(json.dumps({"event": "flush"}))
-        print("[LiveASR] Flush sent — waiting for final transcript")
+        # Signal end of utterance for manual endpointing
+        await self._ws.send(json.dumps({"event": "speech_end"}))
+        self._in_utterance = False
+        print("[LiveASR] speech_end sent — waiting for final transcript")
 
-        # Drain frames until we get a final (non-partial) transcript.
-        # Saaras v3-realtime uses event-based JSON responses:
-        #   {"event": "interim_transcript", "transcript": "...", "language_code": "..."}
-        #   {"event": "final_transcript",   "transcript": "...", "language_code": "..."}
+        # Drain frames until we get a final transcript.
         while True:
             try:
                 frame = await asyncio.wait_for(
@@ -286,34 +320,31 @@ class SarvamLiveASRAdapter:
                 print("[LiveASR] Flush timeout — no final transcript within 10s")
                 break
 
-            event = frame.get("event", "")
-            print(f"[LiveASR] Got frame: event={event!r} keys={list(frame.keys())}")
+            event_type = frame.get("event", "")
+            print(f"[LiveASR] Frame: event={event_type!r} keys={list(frame.keys())}")
 
-            # Handle both event-style (v3-realtime) and type-style (legacy) formats
-            transcript = (
-                frame.get("transcript")
-                or frame.get("data", {}).get("transcript", "")
-            )
-            language = (
-                frame.get("language_code")
-                or frame.get("data", {}).get("language_code", "")
-            )
+            if event_type == "transcript.partial" or event_type == "transcript.final":
+                transcript = frame.get("text", "")
+                language = frame.get("language", "")
 
-            if language:
-                self._detected_language = language
+                if language:
+                    self._detected_language = language
 
-            is_partial = event in ("interim_transcript", "partial", "interim")
-            is_final   = event in ("final_transcript", "final", "data")
-
-            if transcript:
                 yield {
                     "transcript": transcript,
-                    "is_partial": not is_final,
-                    "language": language or self._detected_language,
+                    "is_partial": event_type == "transcript.partial",
+                    "language":   language or self._detected_language,
                 }
+                
+                if event_type == "transcript.final":
+                    break  # Got final transcript — WS stays open for next utterance
 
-            if is_final:
-                break  # WS remains open for next utterance
+            elif event_type == "error":
+                print(f"[LiveASR] Saaras error frame: {frame}")
+                break
+
+            else:
+                print(f"[LiveASR] Skipping non-transcript frame: event={event_type!r}")
 
     @property
     def detected_language(self) -> str:
@@ -322,36 +353,34 @@ class SarvamLiveASRAdapter:
 
     async def _background_reader(self) -> None:
         """
-        Continuously reads all incoming frames from Saaras and puts them
-        into self._recv_queue. Runs as a background asyncio task.
-        Saaras v3-realtime sends JSON text frames only.
+        Continuously reads all incoming frames from Saaras into self._recv_queue.
+        Runs as a background asyncio task so frames are never lost between flushes.
         """
         try:
             async for raw in self._ws:
                 try:
                     frame = json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode())
-                    event = frame.get("event", "")
-                    print(f"[LiveASR-reader] Received: event={event!r} keys={list(frame.keys())}")
+                    event_type = frame.get("event", "?")
+                    print(f"[LiveASR-reader] Received event={event_type!r}")
                     await self._recv_queue.put(frame)
                 except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                    raw_preview = str(raw)[:80]
-                    print(f"[LiveASR-reader] Could not parse frame: {e} | raw={raw_preview!r}")
+                    raw_preview = str(raw)[:100]
+                    print(f"[LiveASR-reader] Parse error: {e} | raw={raw_preview!r}")
         except websockets.exceptions.ConnectionClosedOK:
-            print("[LiveASR-reader] Connection closed normally")
+            print("[LiveASR-reader] WS closed normally")
         except websockets.exceptions.WebSocketException as exc:
             print(f"[LiveASR-reader] WS error: {exc}")
+        except Exception as exc:
+            print(f"[LiveASR-reader] Unexpected error: {exc}")
 
     async def close(self) -> None:
-        """
-        Gracefully close the Saaras WS and stop the background reader.
-        Call when the browser session ends permanently.
-        """
+        """Gracefully close the Saaras WS and stop the background reader."""
         if self._reader_task and not self._reader_task.done():
             self._reader_task.cancel()
             try:
                 await self._reader_task
             except asyncio.CancelledError:
                 pass
-        if self._ws and self._ws.state == _WSState.OPEN:
+        if self._is_open():
             await self._ws.close()
             print("[LiveASR] Session closed")
