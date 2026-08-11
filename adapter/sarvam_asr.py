@@ -244,12 +244,17 @@ class SarvamLiveASRAdapter:
 
     async def stream_chunk(self, pcm_bytes: bytes) -> None:
         """
-        Forward a raw PCM binary frame to Saaras.
-        Called ~50 times/sec (20ms chunks) while the user is recording.
-        Fire-and-forget — no response expected per chunk.
+        Forward a PCM chunk to Saaras v3-realtime.
+        The realtime API expects JSON text frames, NOT raw binary:
+          {"event": "audio_input", "audio": "<base64-encoded PCM>"}
+        Called ~50 times/sec (20ms chunks) while user is recording.
         """
         if self._ws and self._ws.state == _WSState.OPEN:
-            await self._ws.send(pcm_bytes)  # binary frame, no base64 encoding
+            payload = json.dumps({
+                "event": "audio_input",
+                "audio": base64.b64encode(pcm_bytes).decode(),
+            })
+            await self._ws.send(payload)  # JSON text frame
 
     async def flush_utterance(self) -> AsyncIterator[dict]:
         """
@@ -264,10 +269,14 @@ class SarvamLiveASRAdapter:
         if not self._ws or self._ws.state != _WSState.OPEN:
             return
 
-        # Send flush signal — Saaras will finalize the current utterance
-        await self._ws.send(json.dumps({"type": "flush"}))
+        # Send flush signal — Saaras v3-realtime event protocol
+        await self._ws.send(json.dumps({"event": "flush"}))
+        print("[LiveASR] Flush sent — waiting for final transcript")
 
-        # Drain frames until we get a final (non-partial) transcript
+        # Drain frames until we get a final (non-partial) transcript.
+        # Saaras v3-realtime uses event-based JSON responses:
+        #   {"event": "interim_transcript", "transcript": "...", "language_code": "..."}
+        #   {"event": "final_transcript",   "transcript": "...", "language_code": "..."}
         while True:
             try:
                 frame = await asyncio.wait_for(
@@ -277,21 +286,26 @@ class SarvamLiveASRAdapter:
                 print("[LiveASR] Flush timeout — no final transcript within 10s")
                 break
 
-            msg_type = frame.get("type", "")
-            data = frame.get("data", {})
-            transcript = data.get("transcript", "")
-            language = data.get("language_code", "")
+            event = frame.get("event", "")
+            print(f"[LiveASR] Got frame: event={event!r} keys={list(frame.keys())}")
 
-            # Update detected language whenever Saaras tells us
+            # Handle both event-style (v3-realtime) and type-style (legacy) formats
+            transcript = (
+                frame.get("transcript")
+                or frame.get("data", {}).get("transcript", "")
+            )
+            language = (
+                frame.get("language_code")
+                or frame.get("data", {}).get("language_code", "")
+            )
+
             if language:
                 self._detected_language = language
 
-            # Saaras realtime sends "partial" frames while speaking,
-            # "final" (or "data") after flush
-            is_partial = msg_type in ("partial", "interim")
-            is_final = msg_type in ("final", "data")
+            is_partial = event in ("interim_transcript", "partial", "interim")
+            is_final   = event in ("final_transcript", "final", "data")
 
-            if transcript or is_final:
+            if transcript:
                 yield {
                     "transcript": transcript,
                     "is_partial": not is_final,
@@ -299,7 +313,7 @@ class SarvamLiveASRAdapter:
                 }
 
             if is_final:
-                break  # Done — WS remains open for next utterance
+                break  # WS remains open for next utterance
 
     @property
     def detected_language(self) -> str:
@@ -310,20 +324,22 @@ class SarvamLiveASRAdapter:
         """
         Continuously reads all incoming frames from Saaras and puts them
         into self._recv_queue. Runs as a background asyncio task.
-        This ensures incoming frames don't pile up in the WS buffer while
-        the server is waiting between flushes.
+        Saaras v3-realtime sends JSON text frames only.
         """
         try:
             async for raw in self._ws:
                 try:
                     frame = json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode())
+                    event = frame.get("event", "")
+                    print(f"[LiveASR-reader] Received: event={event!r} keys={list(frame.keys())}")
                     await self._recv_queue.put(frame)
-                except (json.JSONDecodeError, UnicodeDecodeError):
-                    pass  # Ignore malformed frames silently
+                except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                    raw_preview = str(raw)[:80]
+                    print(f"[LiveASR-reader] Could not parse frame: {e} | raw={raw_preview!r}")
         except websockets.exceptions.ConnectionClosedOK:
-            pass  # Normal close — session ended
+            print("[LiveASR-reader] Connection closed normally")
         except websockets.exceptions.WebSocketException as exc:
-            print(f"[LiveASR] WS reader error: {exc}")
+            print(f"[LiveASR-reader] WS error: {exc}")
 
     async def close(self) -> None:
         """
