@@ -91,7 +91,7 @@ class SarvamTTSAdapter(BaseTTSAdapter):
                 await ws.configure(
                     target_language_code=language,
                     speaker=speaker,
-                    output_audio_codec="mp3",
+                    output_audio_codec="linear16",
                     speech_sample_rate=24000,
                     pace=pace,
                 )
@@ -152,7 +152,7 @@ class SarvamTTSAdapter(BaseTTSAdapter):
 
         return TTSOutput(
             audio_bytes=audio_bytes,
-            audio_format="mp3",
+            audio_format="pcm",
             language=tts_input.language,
             latency_ms=latency_ms,
             model_id="sarvam/bulbul-v3",
@@ -163,7 +163,7 @@ class SarvamTTSAdapter(BaseTTSAdapter):
 
     async def synthesise_streaming(self, tts_input: TTSInput):
         """
-        Async generator — yields raw mp3 audio bytes as chunks arrive from Bulbul v3.
+        Async generator — yields raw linear16 PCM audio bytes as chunks arrive from Bulbul v3.
         Reuses persistent WebSockets across requests to bypass connection setup latency.
         """
         if tts_input.language not in _BULBUL_V3_LANGS:

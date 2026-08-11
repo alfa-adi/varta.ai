@@ -251,17 +251,17 @@ const audioCtx    = {a: null, b: null};     // AudioContext for mic capture
 const micStream   = {a: null, b: null};     // MediaStream from getUserMedia
 const workletNode = {a: null, b: null};     // AudioWorkletNode
 
-// ─── Web Audio API: Opus playback queue ──────────────────────────────────────
-// TTS audio arrives as base64-encoded Opus chunks over the WS.
-// We decode each chunk via AudioContext.decodeAudioData and queue them for
-// gapless sequential playback.
-const audioQueue   = {a: [], b: []};       // decoded AudioBuffer queue
-let   isPlaying    = {a: false, b: false}; // true while playback is running
-let   playbackCtx  = {a: null, b: null};   // separate AudioContext for playback
+// ─── Web Audio API: Gapless PCM playback ──────────────────────────────────────
+// TTS audio arrives as base64-encoded linear16 PCM chunks over the WS.
+// We convert them directly to Float32Arrays and schedule them on the
+// AudioContext timeline to guarantee zero silence/gaps between chunks.
+const nextPlayTime = {a: 0, b: 0};
+let   playbackCtx  = {a: null, b: null};
 
 function getPlaybackCtx(speaker) {
   if (!playbackCtx[speaker]) {
-    playbackCtx[speaker] = new AudioContext();
+    // Sarvam bulbul:v3 uses 24kHz sample rate
+    playbackCtx[speaker] = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
   }
   return playbackCtx[speaker];
 }
@@ -270,33 +270,48 @@ async function enqueueAudioChunk(speaker, base64Data) {
   try {
     const ctx = getPlaybackCtx(speaker);
     const bytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-    const buffer = await ctx.decodeAudioData(bytes.buffer);
-    audioQueue[speaker].push(buffer);
-    if (!isPlaying[speaker]) playNext(speaker);
+    
+    // linear16 implies 16-bit integer PCM. We cast the raw bytes to Int16
+    // and normalize them to Float32 (-1.0 to 1.0) for the Web Audio API.
+    const int16Array = new Int16Array(bytes.buffer);
+    const float32Array = new Float32Array(int16Array.length);
+    for (let i = 0; i < int16Array.length; i++) {
+      float32Array[i] = int16Array[i] / 32768.0;
+    }
+    
+    const buffer = ctx.createBuffer(1, float32Array.length, 24000);
+    buffer.getChannelData(0).set(float32Array);
+    
+    // Mathematical gapless scheduling:
+    // If the queue is empty or behind current time, start now.
+    // Otherwise, start exactly when the previous chunk finishes.
+    if (nextPlayTime[speaker] < ctx.currentTime) {
+      nextPlayTime[speaker] = ctx.currentTime;
+    }
+    
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(ctx.destination);
+    src.start(nextPlayTime[speaker]);
+    
+    // Advance the playhead by the exact duration of this PCM chunk
+    nextPlayTime[speaker] += buffer.duration;
+    
+    // Turn on the 'speaking' indicator UI
+    const ind = document.getElementById(`audio-streaming-${speaker}`);
+    if (ind && !ind.classList.contains('active')) {
+      ind.classList.add('active');
+    }
+    
+    // Turn off the indicator when this specific chunk ends IF it's the last one
+    src.onended = () => {
+      if (ctx.currentTime >= nextPlayTime[speaker] - 0.05) {
+        if (ind) ind.classList.remove('active');
+      }
+    };
   } catch(e) {
     console.warn('[audio] decode error:', e.message);
   }
-}
-
-function playNext(speaker) {
-  const queue = audioQueue[speaker];
-  if (!queue.length) {
-    isPlaying[speaker] = false;
-    const ind = document.getElementById(`audio-streaming-${speaker}`);
-    if (ind) ind.classList.remove('active');
-    return;
-  }
-  isPlaying[speaker] = true;
-  const ind = document.getElementById(`audio-streaming-${speaker}`);
-  if (ind) ind.classList.add('active');
-
-  const ctx = getPlaybackCtx(speaker);
-  const buf = queue.shift();
-  const src = ctx.createBufferSource();
-  src.buffer = buf;
-  src.connect(ctx.destination);
-  src.onended = () => playNext(speaker);
-  src.start();
 }
 
 function showError(msg) {
