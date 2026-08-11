@@ -57,19 +57,54 @@ _BULBUL_V3_LANGS: frozenset[str] = frozenset({
 
 
 class SarvamTTSAdapter(BaseTTSAdapter):
-    """Bulbul v3 TTS via WebSocket streaming — replaces REST implementation."""
+    """Bulbul v3 TTS via persistent WebSocket streaming connection pool."""
 
     def __init__(self, api_key: str):
         self._api_key = api_key
-        # AsyncSarvamAI is safe to instantiate once per adapter instance;
-        # each synthesise() call opens its own WS connection.
         self._client = AsyncSarvamAI(api_subscription_key=api_key)
+        # Connection pool: (language, speaker) -> {"ws_ctx": context, "ws": ws_instance, "lock": asyncio.Lock()}
+        self._pool: dict[tuple[str, str], dict] = {}
+        self._pool_lock = asyncio.Lock()
 
     def supports_language(self, language: str) -> bool:
         return language in _BULBUL_V3_LANGS
 
     def _get_speaker(self, language: str, gender: str) -> str:
         return _VOICE_MAP.get((language, gender.lower()), _DEFAULT_SPEAKER)
+
+    async def _get_connection(self, language: str, speaker: str, pace: float = 1.0):
+        key = (language, speaker)
+        async with self._pool_lock:
+            entry = self._pool.get(key)
+            if entry is not None:
+                # Basic check if websocket connection appears alive
+                if hasattr(entry["ws"], "closed") and entry["ws"].closed:
+                    entry = None
+
+            if entry is None:
+                print(f"[TTS-pool] Opening new persistent WS for ({language}, {speaker})...")
+                ws_ctx = self._client.text_to_speech_streaming.connect(
+                    model="bulbul:v3",
+                    send_completion_event=True,
+                )
+                ws = await ws_ctx.__aenter__()
+                await ws.configure(
+                    target_language_code=language,
+                    speaker=speaker,
+                    output_audio_codec="mp3",
+                    speech_sample_rate=24000,
+                    pace=pace,
+                )
+                entry = {
+                    "ws_ctx": ws_ctx,
+                    "ws": ws,
+                    "lock": asyncio.Lock(),
+                }
+                self._pool[key] = entry
+            else:
+                print(f"[TTS-pool] Reusing persistent WS for ({language}, {speaker})")
+
+            return entry["ws"], entry["lock"]
 
     async def synthesise(self, tts_input: TTSInput) -> TTSOutput:
         if tts_input.language not in _BULBUL_V3_LANGS:
@@ -82,44 +117,31 @@ class SarvamTTSAdapter(BaseTTSAdapter):
         t0 = time.perf_counter()
         gender = getattr(tts_input, "voice_gender", "female")
         speaker = self._get_speaker(tts_input.language, gender)
+        pace = getattr(tts_input, "pace", 1.0)
+
+        ws, lock = await self._get_connection(tts_input.language, speaker, pace)
 
         audio_chunks: list[bytes] = []
         tcp_ms = 0
         api_ms = 0
         parse_ms = 0
 
-        tcp_start = time.perf_counter()
-        async with self._client.text_to_speech_streaming.connect(
-            model="bulbul:v3",
-            send_completion_event=True,  # Server sends "final" event when done
-        ) as ws:
-            tcp_ms = int((time.perf_counter() - tcp_start) * 1000)
-            
-            # Config must be the first message after connect
-            await ws.configure(
-                target_language_code=tts_input.language,
-                speaker=speaker,
-                output_audio_codec="mp3",    # Reverted to mp3 for Web Audio API compatibility
-                speech_sample_rate=24000,
-                pace=getattr(tts_input, "pace", 1.0),
-            )
-
-            await ws.convert(tts_input.text)
-            await ws.flush()  # Signal end of text; server finalizes synthesis
-
+        async with lock:
             api_start = time.perf_counter()
+            await ws.convert(tts_input.text)
+            await ws.flush()
+
             async for message in ws:
                 api_ms += int((time.perf_counter() - api_start) * 1000)
                 parse_start = time.perf_counter()
-                
+
                 if isinstance(message, AudioOutput):
-                    # Each AudioOutput carries a base64-encoded audio chunk
                     audio_chunks.append(base64.b64decode(message.data.audio))
                 elif isinstance(message, EventResponse):
                     if message.data.event_type == "final":
                         parse_ms += int((time.perf_counter() - parse_start) * 1000)
-                        break  # All chunks received; clean exit
-                        
+                        break
+
                 parse_ms += int((time.perf_counter() - parse_start) * 1000)
                 api_start = time.perf_counter()
 
@@ -130,7 +152,7 @@ class SarvamTTSAdapter(BaseTTSAdapter):
 
         return TTSOutput(
             audio_bytes=audio_bytes,
-            audio_format="mp3",   # Changed back to mp3
+            audio_format="mp3",
             language=tts_input.language,
             latency_ms=latency_ms,
             model_id="sarvam/bulbul-v3",
@@ -142,17 +164,7 @@ class SarvamTTSAdapter(BaseTTSAdapter):
     async def synthesise_streaming(self, tts_input: TTSInput):
         """
         Async generator — yields raw mp3 audio bytes as chunks arrive from Bulbul v3.
-
-        Unlike synthesise() which waits for all chunks before returning,
-        this yields each chunk immediately as it is decoded from the WS.
-        The first chunk arrives in ~100–200ms, enabling the browser to start
-        playing audio long before the full synthesis is complete.
-
-        Usage:
-            async for chunk in tts_adapter.synthesise_streaming(tts_input):
-                await websocket.send_bytes(chunk)   # browser plays immediately
-
-        Raises ValueError if the language is not supported by Bulbul v3.
+        Reuses persistent WebSockets across requests to bypass connection setup latency.
         """
         if tts_input.language not in _BULBUL_V3_LANGS:
             raise ValueError(
@@ -162,19 +174,12 @@ class SarvamTTSAdapter(BaseTTSAdapter):
 
         gender = getattr(tts_input, "voice_gender", "female")
         speaker = self._get_speaker(tts_input.language, gender)
+        pace = getattr(tts_input, "pace", 1.0)
+
+        ws, lock = await self._get_connection(tts_input.language, speaker, pace)
         chunk_count = 0
 
-        async with self._client.text_to_speech_streaming.connect(
-            model="bulbul:v3",
-            send_completion_event=True,
-        ) as ws:
-            await ws.configure(
-                target_language_code=tts_input.language,
-                speaker=speaker,
-                output_audio_codec="mp3",
-                speech_sample_rate=24000,
-                pace=getattr(tts_input, "pace", 1.0),
-            )
+        async with lock:
             await ws.convert(tts_input.text)
             await ws.flush()
 
@@ -182,9 +187,9 @@ class SarvamTTSAdapter(BaseTTSAdapter):
                 if isinstance(message, AudioOutput):
                     chunk = base64.b64decode(message.data.audio)
                     chunk_count += 1
-                    yield chunk  # ← caller receives this immediately, no buffering
+                    yield chunk
                 elif isinstance(message, EventResponse):
                     if message.data.event_type == "final":
-                        break  # All chunks sent — clean exit
+                        break
 
         print(f"[TTS-stream] text len: {len(tts_input.text)} | chunks: {chunk_count} | lang: {tts_input.language}")
