@@ -65,8 +65,8 @@ class SarvamNMTAdapter(BaseNMTAdapter):
 
         start_ms = int(time.time() * 1000)
 
-        src_lang = "od-IN" if input.src_language == "or" else input.src_language
-        tgt_lang = "od-IN" if input.tgt_language == "or" else input.tgt_language
+        src_lang = "od-IN" if input.src_language in ("or", "or-IN") else input.src_language
+        tgt_lang = "od-IN" if input.tgt_language in ("or", "or-IN") else input.tgt_language
 
         payload = {
             "input":                input.text,
