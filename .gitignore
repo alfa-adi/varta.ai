@@ -107,3 +107,7 @@ dmypy.json
 .pyre/
 
 test_adapters.py
+
+# V2 WebSocket Test Scripts and Results
+test/ws_reliability_test/
+test/results/

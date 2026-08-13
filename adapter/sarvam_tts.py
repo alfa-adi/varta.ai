@@ -73,38 +73,21 @@ class SarvamTTSAdapter(BaseTTSAdapter):
         return _VOICE_MAP.get((language, gender.lower()), _DEFAULT_SPEAKER)
 
     async def _get_connection(self, language: str, speaker: str, pace: float = 1.0):
-        key = (language, speaker)
-        async with self._pool_lock:
-            entry = self._pool.get(key)
-            if entry is not None:
-                # Basic check if websocket connection appears alive
-                if hasattr(entry["ws"], "closed") and entry["ws"].closed:
-                    entry = None
-
-            if entry is None:
-                print(f"[TTS-pool] Opening new persistent WS for ({language}, {speaker})...")
-                ws_ctx = self._client.text_to_speech_streaming.connect(
-                    model="bulbul:v3",
-                    send_completion_event=True,
-                )
-                ws = await ws_ctx.__aenter__()
-                await ws.configure(
-                    target_language_code=language,
-                    speaker=speaker,
-                    output_audio_codec="linear16",
-                    speech_sample_rate=24000,
-                    pace=pace,
-                )
-                entry = {
-                    "ws_ctx": ws_ctx,
-                    "ws": ws,
-                    "lock": asyncio.Lock(),
-                }
-                self._pool[key] = entry
-            else:
-                print(f"[TTS-pool] Reusing persistent WS for ({language}, {speaker})")
-
-            return entry["ws"], entry["lock"]
+        # We must create a new WebSocket per synthesis because bulbul:v3 
+        # closes the connection (1000 OK) after a single generation finishes.
+        ws_ctx = self._client.text_to_speech_streaming.connect(
+            model="bulbul:v3",
+            send_completion_event=True,
+        )
+        ws = await ws_ctx.__aenter__()
+        await ws.configure(
+            target_language_code=language,
+            speaker=speaker,
+            output_audio_codec="linear16",
+            speech_sample_rate=24000,
+            pace=pace,
+        )
+        return ws_ctx, ws
 
     async def synthesise(self, tts_input: TTSInput) -> TTSOutput:
         if tts_input.language not in _BULBUL_V3_LANGS:
@@ -119,14 +102,14 @@ class SarvamTTSAdapter(BaseTTSAdapter):
         speaker = self._get_speaker(tts_input.language, gender)
         pace = getattr(tts_input, "pace", 1.0)
 
-        ws, lock = await self._get_connection(tts_input.language, speaker, pace)
+        ws_ctx, ws = await self._get_connection(tts_input.language, speaker, pace)
 
         audio_chunks: list[bytes] = []
         tcp_ms = 0
         api_ms = 0
         parse_ms = 0
 
-        async with lock:
+        try:
             api_start = time.perf_counter()
             await ws.convert(tts_input.text)
             await ws.flush()
@@ -144,6 +127,8 @@ class SarvamTTSAdapter(BaseTTSAdapter):
 
                 parse_ms += int((time.perf_counter() - parse_start) * 1000)
                 api_start = time.perf_counter()
+        finally:
+            await ws_ctx.__aexit__(None, None, None)
 
         audio_bytes = b"".join(audio_chunks)
         latency_ms = int((time.perf_counter() - t0) * 1000)
@@ -176,10 +161,10 @@ class SarvamTTSAdapter(BaseTTSAdapter):
         speaker = self._get_speaker(tts_input.language, gender)
         pace = getattr(tts_input, "pace", 1.0)
 
-        ws, lock = await self._get_connection(tts_input.language, speaker, pace)
+        ws_ctx, ws = await self._get_connection(tts_input.language, speaker, pace)
         chunk_count = 0
 
-        async with lock:
+        try:
             await ws.convert(tts_input.text)
             await ws.flush()
 
@@ -191,5 +176,7 @@ class SarvamTTSAdapter(BaseTTSAdapter):
                 elif isinstance(message, EventResponse):
                     if message.data.event_type == "final":
                         break
+        finally:
+            await ws_ctx.__aexit__(None, None, None)
 
         print(f"[TTS-stream] text len: {len(tts_input.text)} | chunks: {chunk_count} | lang: {tts_input.language}")

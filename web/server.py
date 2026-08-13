@@ -100,11 +100,11 @@ if MONGO_URL:
         print(f"    logs    → {MONGO_DB}")
         print(f"    metrics → varta_metrics")
     except Exception as e:
-        print(f"⚠️   MongoDB failed ({e}) — logging disabled")
+        print(f"[WARN] MongoDB failed ({e}) - logging disabled")
         _mongo         = None
         _mongo_metrics = None
 else:
-    print("ℹ️   No MONGO_URL — logging disabled (local mode)")
+    print("[INFO] No MONGO_URL - logging disabled (local mode)")
 
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
