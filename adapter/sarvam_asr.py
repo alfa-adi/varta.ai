@@ -293,37 +293,24 @@ class SarvamLiveASRAdapter:
         })
         await self._ws.send(payload)
 
-    async def flush_utterance(self) -> AsyncIterator[dict]:
-        """
-        Signal end of utterance. Yields transcript dicts until the final
-        transcript arrives.
-
-        Each yielded dict: { "transcript": str, "is_partial": bool, "language": str }
-        The WS stays open after flush — ready for the next utterance.
-        """
+    async def signal_speech_end(self) -> None:
+        """Signal end of utterance for manual endpointing."""
         if not self._is_open():
-            print("[LiveASR] flush_utterance called but WS is not open — returning")
             return
-
-        # Signal end of utterance for manual endpointing
         await self._ws.send(json.dumps({"event": "speech_end"}))
         self._in_utterance = False
-        print("[LiveASR] speech_end sent — waiting for final transcript")
+        print("[LiveASR] speech_end sent")
 
-        # Drain frames until we get a final transcript.
+    async def listen_transcripts(self) -> AsyncIterator[dict]:
+        """
+        Continuously yields transcript dicts as they arrive from Saaras.
+        Yields: { "transcript": str, "is_partial": bool, "language": str }
+        """
         while True:
-            try:
-                frame = await asyncio.wait_for(
-                    self._recv_queue.get(), timeout=10.0
-                )
-            except asyncio.TimeoutError:
-                print("[LiveASR] Flush timeout — no final transcript within 10s")
-                break
-
+            frame = await self._recv_queue.get()
             event_type = frame.get("event", "")
-            print(f"[LiveASR] Frame: event={event_type!r} keys={list(frame.keys())}")
 
-            if event_type == "transcript.partial" or event_type == "transcript.final":
+            if event_type in ("transcript.partial", "transcript.final"):
                 transcript = frame.get("text", "")
                 language = frame.get("language", "")
 
@@ -335,16 +322,11 @@ class SarvamLiveASRAdapter:
                     "is_partial": event_type == "transcript.partial",
                     "language":   language or self._detected_language,
                 }
-                
-                if event_type == "transcript.final":
-                    break  # Got final transcript — WS stays open for next utterance
-
             elif event_type == "error":
                 print(f"[LiveASR] Saaras error frame: {frame}")
-                break
-
+                # We do not break here; just log and continue listening.
             else:
-                print(f"[LiveASR] Skipping non-transcript frame: event={event_type!r}")
+                pass # ignore non-transcript frames
 
     @property
     def detected_language(self) -> str:

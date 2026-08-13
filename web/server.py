@@ -16,6 +16,7 @@ Sessions are stored in-memory (dict keyed by session_id).
 For production, use Redis. For the PoC, memory is fine.
 """
 
+import asyncio
 import base64
 import json
 import os
@@ -983,48 +984,34 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
         other = "b" if speaker == "a" else "a"
         return state.get(f"lang_{other}") or "en-IN"
 
-    try:
-        while True:
-            msg = await websocket.receive()
+    async def transcript_broadcaster():
+        """Continuously reads from adapter's queue and sends to browser instantly."""
+        try:
+            async for frame in adapter.listen_transcripts():
+                text = frame["transcript"]
+                lang = frame["language"]
+                is_partial = frame["is_partial"]
 
-            # ── Binary frame: PCM audio chunk ─────────────────────────
-            if "bytes" in msg and msg["bytes"]:
-                await adapter.stream_chunk(msg["bytes"])
-
-            # ── Text frame: control message ───────────────────────────
-            elif "text" in msg and msg["text"]:
+                # Buffer in Redis for audit / recovery
                 try:
-                    ctrl = json.loads(msg["text"])
-                except json.JSONDecodeError:
-                    continue
+                    _push_transcript(session_id, speaker, text, is_partial)
+                except Exception as e:
+                    print(f"[WS/ASR] Redis push error: {e}")
 
-                if ctrl.get("type") == "stop_recording":
-                    # ── Flush utterance & collect transcript ──────────
-                    final_text = ""
-                    detected_language = adapter.detected_language
+                # Update in-process language cache
+                if lang:
+                    _save_detected_language(session_id, speaker, lang)
 
-                    async for frame in adapter.flush_utterance():
-                        text = frame["transcript"]
-                        lang = frame["language"]
-                        is_partial = frame["is_partial"]
+                # Forward to browser for live UI update
+                msg_type = "transcript_partial" if is_partial else "transcript_final"
+                await websocket.send_json({
+                    "type": msg_type,
+                    "transcript": text,
+                })
 
-                        # Buffer in Redis for audit / recovery
-                        _push_transcript(session_id, speaker, text, is_partial)
-
-                        # Update in-process language cache
-                        if lang:
-                            detected_language = lang
-                            _save_detected_language(session_id, speaker, lang)
-
-                        # Forward to browser for live UI update
-                        msg_type = "transcript_partial" if is_partial else "transcript_final"
-                        await websocket.send_json({
-                            "type": msg_type,
-                            "transcript": text,
-                        })
-
-                        if not is_partial:
-                            final_text = text
+                if not is_partial:
+                    final_text = text
+                    detected_language = lang or adapter.detected_language
 
                     # Send detected language to browser
                     if detected_language:
@@ -1088,6 +1075,33 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
                     # there was any speech or audio to play.
                     await websocket.send_json({"type": "audio_end"})
 
+        except WebSocketDisconnect:
+            pass  # Expected if user navigates away
+        except Exception as exc:
+            print(f"[WS/ASR] Broadcaster error: {exc}")
+
+    broadcaster_task = asyncio.create_task(transcript_broadcaster())
+
+    try:
+        while True:
+            msg = await websocket.receive()
+
+            # ── Binary frame: PCM audio chunk ─────────────────────────
+            if "bytes" in msg and msg["bytes"]:
+                await adapter.stream_chunk(msg["bytes"])
+
+            # ── Text frame: control message ───────────────────────────
+            elif "text" in msg and msg["text"]:
+                try:
+                    ctrl = json.loads(msg["text"])
+                except json.JSONDecodeError:
+                    continue
+
+                if ctrl.get("type") == "stop_recording":
+                    # Tell adapter to send speech_end so we eventually get transcript.final
+                    # The broadcaster_task will catch it and trigger NMT+TTS.
+                    await adapter.signal_speech_end()
+
     except WebSocketDisconnect:
         # Browser disconnected — leave Saaras WS alive for quick reconnect.
         # A reconnecting browser will reuse the same session_key.
@@ -1098,6 +1112,8 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
             await websocket.send_json({"type": "error", "message": str(exc)})
         except Exception:
             pass
+    finally:
+        broadcaster_task.cancel()
 
 
 # ── Run ───────────────────────────────────────────────────────────────────────
