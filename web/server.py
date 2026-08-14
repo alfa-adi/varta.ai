@@ -1086,6 +1086,9 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
         while True:
             msg = await websocket.receive()
 
+            if msg["type"] == "websocket.disconnect":
+                raise WebSocketDisconnect(msg.get("code", 1000))
+
             # ── Binary frame: PCM audio chunk ─────────────────────────
             if "bytes" in msg and msg["bytes"]:
                 await adapter.stream_chunk(msg["bytes"])
