@@ -986,6 +986,7 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
 
     async def transcript_broadcaster():
         """Continuously reads from adapter's queue and sends to browser instantly."""
+        audio_end_sent = False
         try:
             async for frame in adapter.listen_transcripts():
                 text = frame["transcript"]
@@ -1074,11 +1075,21 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
                     # from the 'Processing...' state, regardless of whether
                     # there was any speech or audio to play.
                     await websocket.send_json({"type": "audio_end"})
+                    audio_end_sent = True
 
         except WebSocketDisconnect:
             pass  # Expected if user navigates away
         except Exception as exc:
             print(f"[WS/ASR] Broadcaster error: {exc}")
+        finally:
+            if not audio_end_sent:
+                try:
+                    await websocket.send_json({
+                        "type":    "error",
+                        "message": "Audio dropped or no speech detected. Please try again.",
+                    })
+                except Exception:
+                    pass
 
     broadcaster_task = asyncio.create_task(transcript_broadcaster())
 

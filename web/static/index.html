@@ -450,14 +450,11 @@ async function toggleRecord(speaker) {
         workletNode[speaker].disconnect();
         workletNode[speaker] = null;
       }
-      if (micStream[speaker]) {
-        micStream[speaker].getTracks().forEach(t => t.stop());
-        micStream[speaker] = null;
-      }
-      if (audioCtx[speaker]) {
-        await audioCtx[speaker].close();
-        audioCtx[speaker] = null;
-      }
+
+      // ── Do NOT close the mic stream or audio context here. ──
+      // Mobile browsers often fail or send silent PCM audio if we repeatedly 
+      // request getUserMedia or create new AudioContexts on every tap.
+      // Keeping them alive resolves the blank audio bug to Sarvam.
 
       // Signal server to flush utterance and run NMT+TTS
       if (liveWS[speaker] && liveWS[speaker].readyState === WebSocket.OPEN) {
@@ -472,18 +469,25 @@ async function toggleRecord(speaker) {
       // Ensure server WS is open (persistent — created once, reused across turns)
       await ensureLiveWS(speaker);
 
-      // Request mic access at 16kHz mono for direct PCM feed to Saaras
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true }
-      });
-      micStream[speaker] = stream;
+      let stream = micStream[speaker];
+      if (!stream) {
+        // Request mic access at 16kHz mono for direct PCM feed to Saaras
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true }
+        });
+        micStream[speaker] = stream;
+      }
 
-      // AudioContext: must match the sampleRate we're sending to Saaras
-      const ctx = new AudioContext({ sampleRate: 16000 });
-      audioCtx[speaker] = ctx;
-
-      // Load the AudioWorklet processor (served as a static file)
-      await ctx.audioWorklet.addModule('/static/pcm-processor.js');
+      let ctx = audioCtx[speaker];
+      if (!ctx) {
+        // AudioContext: must match the sampleRate we're sending to Saaras
+        ctx = new AudioContext({ sampleRate: 16000 });
+        audioCtx[speaker] = ctx;
+        // Load the AudioWorklet processor (served as a static file)
+        await ctx.audioWorklet.addModule('/static/pcm-processor.js');
+      } else if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
 
       const micSource = ctx.createMediaStreamSource(stream);
       const worklet = new AudioWorkletNode(ctx, 'pcm-processor');
