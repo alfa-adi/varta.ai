@@ -335,8 +335,33 @@ async function ensureSession() {
   badge.textContent   = "Session active";
 }
 
+function stopRecording(speaker, sendStopMessage = true) {
+  if (!isRecording[speaker]) return;
+  isRecording[speaker] = false;
+  
+  const btn = document.getElementById(`rec-${speaker}`);
+  if (btn) {
+    btn.className = 'record-btn idle';
+    btn.textContent = '🎙';
+  }
+  const label = document.getElementById(`rec-label-${speaker}`);
+  if (label) label.textContent = 'Processing…';
+
+  if (workletNode[speaker]) {
+    workletNode[speaker].port.onmessage = null;
+    workletNode[speaker].disconnect();
+    workletNode[speaker] = null;
+  }
+
+  if (sendStopMessage && liveWS[speaker] && liveWS[speaker].readyState === WebSocket.OPEN) {
+    liveWS[speaker].send(JSON.stringify({ type: 'stop_recording' }));
+  } else if (sendStopMessage) {
+    showError('WebSocket connection is not open. Please try again.');
+    if (label) label.textContent = 'Press to record';
+  }
+}
+
 async function ensureLiveWS(speaker) {
-  // If an open WS already exists for this speaker, reuse it.
   if (liveWS[speaker] && liveWS[speaker].readyState === WebSocket.OPEN) return;
 
   await ensureSession();
@@ -351,12 +376,10 @@ async function ensureLiveWS(speaker) {
     const msg = JSON.parse(evt.data);
 
     if (msg.type === 'transcript_partial') {
-      // Live partial — show in the inline preview bar below the record button
       const liveEl = document.getElementById(`live-transcript-${speaker}`);
       if (liveEl) { liveEl.textContent = msg.transcript; liveEl.classList.add('active'); }
 
     } else if (msg.type === 'transcript_final') {
-      // Final — move it into the conversation bubble area
       const liveEl = document.getElementById(`live-transcript-${speaker}`);
       if (liveEl) { liveEl.textContent = ''; liveEl.classList.remove('active'); }
       const dot = document.getElementById(`live-dot-${speaker}`);
@@ -373,17 +396,17 @@ async function ensureLiveWS(speaker) {
       document.getElementById(`lang-${msg.speaker}-label`).textContent = langLabel;
 
     } else if (msg.type === 'audio_chunk') {
-      // TTS streaming — play each chunk immediately as it arrives
       const otherSpeaker = speaker === 'a' ? 'b' : 'a';
       await enqueueAudioChunk(otherSpeaker, msg.data);
 
     } else if (msg.type === 'audio_end') {
-      // All TTS chunks sent — hide spinner
+      stopRecording(speaker, false);
       document.getElementById(`spin-${speaker}`).style.display = 'none';
       document.getElementById(`rec-label-${speaker}`).textContent = 'Press to record';
 
     } else if (msg.type === 'error') {
       showError(msg.message);
+      stopRecording(speaker, false);
       document.getElementById(`spin-${speaker}`).style.display = 'none';
       document.getElementById(`rec-label-${speaker}`).textContent = 'Press to record';
     }
@@ -438,31 +461,7 @@ async function toggleRecord(speaker) {
   try {
     if (isRecording[speaker]) {
       // ── STOP ────────────────────────────────────────────────────────────
-      isRecording[speaker] = false;
-      const btn = document.getElementById(`rec-${speaker}`);
-      btn.className = 'record-btn idle';
-      btn.textContent = '🎙';
-      document.getElementById(`rec-label-${speaker}`).textContent = 'Processing…';
-
-      // Disconnect mic → worklet so no more PCM frames are sent
-      if (workletNode[speaker]) {
-        workletNode[speaker].port.onmessage = null;
-        workletNode[speaker].disconnect();
-        workletNode[speaker] = null;
-      }
-
-      // ── Do NOT close the mic stream or audio context here. ──
-      // Mobile browsers often fail or send silent PCM audio if we repeatedly 
-      // request getUserMedia or create new AudioContexts on every tap.
-      // Keeping them alive resolves the blank audio bug to Sarvam.
-
-      // Signal server to flush utterance and run NMT+TTS
-      if (liveWS[speaker] && liveWS[speaker].readyState === WebSocket.OPEN) {
-        liveWS[speaker].send(JSON.stringify({ type: 'stop_recording' }));
-      } else {
-        showError('WebSocket connection is not open. Please try again.');
-        document.getElementById(`rec-label-${speaker}`).textContent = 'Press to record';
-      }
+      stopRecording(speaker, true);
 
     } else {
       // ── START ───────────────────────────────────────────────────────────
