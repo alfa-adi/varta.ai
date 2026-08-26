@@ -1055,7 +1055,7 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
                                 await websocket.send_json({
                                     "type":   "audio_chunk",
                                     "data":   base64.b64encode(audio_chunk).decode(),
-                                    "format": "mp3",
+                                    "format": "pcm",
                                 })
                         except Exception as exc:
                             print(f"[WS/ASR] Pipeline error: {exc}")

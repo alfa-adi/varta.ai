@@ -70,11 +70,12 @@ class SarvamNMTAdapter(BaseNMTAdapter):
 
         payload = {
             "input":                input.text,
-            "source_language_code": src_lang,
             "target_language_code": tgt_lang,
             "model":                "sarvam-translate:v1",
             "enable_preprocessing": True,    # handles numerals, dates, addresses
         }
+        if src_lang and src_lang != "auto":
+            payload["source_language_code"] = src_lang
 
         # ── Timing hooks ─────────────────────────────────────────────
         timing = {}
