@@ -1,0 +1,101 @@
+/* ── Google Font Import ──────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base layer overrides ────────────────────────────────────────────────── */
+@layer base {
+  body {
+    @apply font-sans antialiased text-white;
+    background: linear-gradient(145deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+    min-height: 100vh;
+  }
+
+  /* Custom scrollbar for transcript areas */
+  .transcript-scroll::-webkit-scrollbar {
+    width: 4px;
+  }
+  .transcript-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .transcript-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 2px;
+  }
+}
+
+/* ── Component layer ─────────────────────────────────────────────────────── */
+@layer components {
+  .glass-card {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl;
+  }
+
+  .glass-card-hover {
+    @apply glass-card transition-all duration-300;
+  }
+  .glass-card-hover:hover {
+    @apply bg-white/[0.08] border-white/20 shadow-indigo-500/5;
+  }
+
+  .btn-record {
+    @apply relative w-20 h-20 rounded-full flex items-center justify-center
+           text-3xl transition-all duration-200 cursor-pointer
+           focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900;
+  }
+
+  .btn-record-idle {
+    @apply btn-record bg-white/10 border-2 border-white/20 hover:bg-white/15
+           hover:border-white/30 focus:ring-white/30;
+  }
+
+  .btn-record-active-a {
+    @apply btn-record bg-speaker-a/20 border-2 border-speaker-a
+           shadow-lg shadow-speaker-a/25 focus:ring-speaker-a;
+  }
+
+  .btn-record-active-b {
+    @apply btn-record bg-speaker-b/20 border-2 border-speaker-b
+           shadow-lg shadow-speaker-b/25 focus:ring-speaker-b;
+  }
+
+  .bubble {
+    @apply animate-slide-up px-4 py-3 rounded-2xl max-w-[90%] text-sm leading-relaxed;
+  }
+
+  .bubble-a {
+    @apply bubble bg-speaker-a/15 border border-speaker-a/20 self-start
+           rounded-bl-md;
+  }
+
+  .bubble-b {
+    @apply bubble bg-speaker-b/15 border border-speaker-b/20 self-end
+           rounded-br-md text-right;
+  }
+
+  .live-pill {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full
+           text-xs font-medium bg-white/10 border border-white/10
+           transition-all duration-300;
+  }
+
+  .live-pill-active {
+    @apply live-pill bg-emerald-500/15 border-emerald-400/30 text-emerald-300
+           shadow-lg shadow-emerald-500/10;
+  }
+
+  .error-bar {
+    @apply fixed top-0 left-0 right-0 z-50 px-4 py-3
+           bg-red-500/90 backdrop-blur-sm text-white text-sm text-center
+           animate-slide-down font-medium;
+  }
+}
+
+/* ── Utility layer ───────────────────────────────────────────────────────── */
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent
+           bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400;
+  }
+}

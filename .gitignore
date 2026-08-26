@@ -111,3 +111,7 @@ test_adapters.py
 # V2 WebSocket Test Scripts and Results
 test/ws_reliability_test/
 test/results/
+
+# Frontend (Vite + Node)
+frontend/node_modules/
+frontend/dist/
