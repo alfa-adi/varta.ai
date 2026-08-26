@@ -247,7 +247,8 @@ class SarvamLiveASRAdapter:
         url = f"{_REALTIME_WS_URL}?{params}"
         headers = {"Api-Subscription-Key": self._api_key}
 
-        self._recv_queue = asyncio.Queue()
+        if self._recv_queue is None:
+            self._recv_queue = asyncio.Queue()
 
         # Use legacy websockets connect — same as SDK (extra_headers for v14+,
         # additional_headers for v12/v13). Try both.
@@ -281,7 +282,9 @@ class SarvamLiveASRAdapter:
         Called ~50 times/sec (20ms chunks) while user is recording.
         """
         if not self._is_open():
-            return
+            print("[LiveASR] Connection dead, auto-reconnecting...")
+            await self.start_session(language_hint=self._detected_language or "unknown")
+            self._in_utterance = False
 
         if not self._in_utterance:
             await self._ws.send(json.dumps({"event": "speech_start"}))
@@ -296,7 +299,9 @@ class SarvamLiveASRAdapter:
     async def signal_speech_end(self) -> None:
         """Signal end of utterance for manual endpointing."""
         if not self._is_open():
-            return
+            print("[LiveASR] Connection dead during signal_speech_end, auto-reconnecting...")
+            await self.start_session(language_hint=self._detected_language or "unknown")
+            self._in_utterance = False
         await self._ws.send(json.dumps({"event": "speech_end"}))
         self._in_utterance = False
         print("[LiveASR] speech_end sent")
