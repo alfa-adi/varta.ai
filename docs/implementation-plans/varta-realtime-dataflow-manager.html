@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Varta Realtime Dataflow Manager</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #10131a;
+      --surface: #171c25;
+      --surface-2: #1d2430;
+      --surface-3: #242e3b;
+      --line: #344154;
+      --text: #f4f7fb;
+      --muted: #9da9b9;
+      --accent: #75c7ff;
+      --accent-soft: rgba(117, 199, 255, .16);
+      --green: #73d19a;
+      --green-soft: rgba(115, 209, 154, .13);
+      --orange: #f6bd73;
+      --orange-soft: rgba(246, 189, 115, .13);
+      --red: #ff8d9b;
+      --red-soft: rgba(255, 141, 155, .14);
+      --purple: #c8a7ff;
+      --purple-soft: rgba(200, 167, 255, .14);
+      --shadow: 0 12px 30px rgba(0, 0, 0, .22);
+      --radius: 12px;
+      --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); }
+    body { padding: 22px; }
+    button, select, input { font: inherit; }
+    button, select, input { color: var(--text); }
+    button { cursor: pointer; }
+    button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .shell { max-width: 1800px; margin: 0 auto; }
+    .topbar { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; margin-bottom: 18px; }
+    .eyebrow { color: var(--accent); text-transform: uppercase; letter-spacing: .13em; font-size: 11px; font-weight: 700; margin-bottom: 6px; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: clamp(24px, 3vw, 36px); line-height: 1.05; letter-spacing: -.03em; }
+    .subtitle { color: var(--muted); margin-top: 7px; max-width: 820px; line-height: 1.5; font-size: 14px; }
+    .contract-strip { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; max-width: 650px; }
+    .contract-pill, .status-pill { border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 6px 9px; font-size: 11px; white-space: nowrap; background: var(--surface); }
+    .contract-pill strong { color: var(--text); font-weight: 650; }
+
+    .controls { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; padding: 12px 14px; margin-bottom: 14px; border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); }
+    .control-group { display: flex; align-items: center; gap: 7px; }
+    .control-label { color: var(--muted); font-size: 12px; }
+    .control-button, .control-select, .search { border: 1px solid var(--line); background: var(--surface-2); border-radius: 8px; min-height: 34px; padding: 7px 10px; font-size: 12px; }
+    .control-button:hover, .control-select:hover, .search:hover { border-color: var(--accent); }
+    .control-button.primary { background: var(--accent-soft); color: var(--accent); border-color: rgba(117, 199, 255, .45); }
+    .control-button.danger { background: var(--red-soft); color: var(--red); border-color: rgba(255, 141, 155, .4); }
+    .search { min-width: 210px; }
+    .spacer { flex: 1; }
+
+    .summary { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .summary-item { padding: 11px 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+    .summary-label { color: var(--muted); font-size: 11px; }
+    .summary-value { margin-top: 3px; font-size: 18px; font-variant-numeric: tabular-nums; }
+    .summary-value.accent { color: var(--accent); }
+    .summary-value.green { color: var(--green); }
+    .summary-value.orange { color: var(--orange); }
+    .summary-value.purple { color: var(--purple); }
+
+    .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 14px; align-items: start; }
+    .panel { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); }
+    .panel-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 14px 16px 12px; border-bottom: 1px solid var(--line); }
+    .panel-heading h2 { font-size: 14px; letter-spacing: .01em; }
+    .panel-heading span { color: var(--muted); font-size: 11px; }
+
+    .flowboard { overflow: auto; max-height: 780px; }
+    .graph-inner { position: relative; min-width: 1510px; padding: 16px; }
+    .lanes { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(6, minmax(220px, 1fr)); gap: 12px; }
+    .lane { min-width: 0; }
+    .lane-heading { display: flex; justify-content: space-between; align-items: center; min-height: 42px; padding: 9px 11px; margin-bottom: 10px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+    .lane-heading strong { color: var(--text); letter-spacing: 0; text-transform: none; font-size: 13px; }
+    .lane-count { border: 1px solid var(--line); border-radius: 999px; padding: 2px 6px; font-size: 10px; }
+    .lane-nodes { display: grid; gap: 9px; }
+
+    .node { position: relative; display: block; width: 100%; text-align: left; min-height: 152px; padding: 11px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; background: var(--surface-2); color: var(--text); transition: border-color .16s ease, background .16s ease, opacity .16s ease, transform .16s ease; }
+    .node:hover { border-color: var(--accent); background: var(--surface-3); transform: translateY(-1px); }
+    .node.selected { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px rgba(117, 199, 255, .18); }
+    .node.active { border-color: var(--green); background: var(--green-soft); box-shadow: 0 0 0 2px rgba(115, 209, 154, .18); }
+    .node.path-off { opacity: .22; }
+    .node.search-off { display: none; }
+    .node.failure { border-left-color: var(--red); }
+    .node.validation { border-left-color: var(--purple); }
+    .node.provider { border-left-color: var(--orange); }
+    .node-kicker { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+    .node-title { margin-top: 6px; font-size: 13px; line-height: 1.25; font-weight: 700; }
+    .node-owner { color: var(--muted); margin-top: 4px; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .node-data { display: grid; gap: 3px; margin-top: 9px; font-size: 10px; line-height: 1.3; }
+    .node-data span { color: var(--muted); }
+    .node-data b { color: var(--text); font-weight: 600; }
+    .node-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 9px; }
+    .node-tag { background: rgba(255, 255, 255, .05); color: var(--muted); border-radius: 4px; padding: 3px 5px; font-size: 9px; }
+    #edgeLayer { position: absolute; inset: 0; z-index: 0; overflow: visible; pointer-events: none; }
+    .edge { fill: none; stroke: #526177; stroke-width: 1.35; opacity: .72; marker-end: url(#arrow); transition: stroke .16s ease, opacity .16s ease, stroke-width .16s ease; }
+    .edge.failure-edge { stroke: var(--red); stroke-dasharray: 5 4; opacity: .62; }
+    .edge.telemetry-edge { stroke: var(--purple); stroke-dasharray: 2 4; opacity: .52; }
+    .edge.edge-off { opacity: .08; }
+    .edge.edge-active { stroke: var(--green); stroke-width: 3; opacity: 1; }
+
+    .detail-panel { position: sticky; top: 14px; overflow: hidden; }
+    .detail-body { padding: 15px 16px 16px; }
+    .detail-title { font-size: 20px; letter-spacing: -.02em; }
+    .detail-id { color: var(--accent); font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 4px; }
+    .detail-kind { display: inline-block; margin-top: 9px; padding: 4px 7px; border-radius: 5px; color: var(--muted); background: var(--surface-3); font-size: 10px; }
+    .detail-grid { display: grid; gap: 10px; margin-top: 17px; }
+    .detail-row { padding-bottom: 9px; border-bottom: 1px solid rgba(52, 65, 84, .65); }
+    .detail-row:last-child { border-bottom: 0; }
+    .detail-label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+    .detail-value { margin-top: 3px; font-size: 12px; line-height: 1.45; }
+    .detail-value code, .token code, .event code { font-family: "SFMono-Regular", Consolas, monospace; font-size: .92em; color: var(--accent); }
+    .data-section { padding: 14px 16px; border-top: 1px solid var(--line); }
+    .data-section h3 { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+    .token-list { display: grid; gap: 7px; margin-top: 9px; }
+    .token { display: grid; grid-template-columns: 132px 1fr; gap: 8px; align-items: start; font-size: 11px; }
+    .token code { white-space: nowrap; }
+    .token span { color: var(--muted); line-height: 1.35; }
+
+    .bottom-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(300px, .8fr); gap: 14px; margin-top: 14px; }
+    .event-feed { max-height: 260px; overflow: auto; padding: 7px 16px 12px; }
+    .event { display: grid; grid-template-columns: 72px 150px 1fr; gap: 9px; padding: 7px 0; border-bottom: 1px solid rgba(52, 65, 84, .55); font-size: 11px; }
+    .event:last-child { border-bottom: 0; }
+    .event-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .event-name { color: var(--accent); }
+    .event-detail { color: var(--muted); line-height: 1.35; }
+    .event.failure-event .event-name { color: var(--red); }
+    .legend { display: grid; gap: 9px; padding: 14px 16px 16px; }
+    .legend-row { display: flex; gap: 9px; align-items: center; color: var(--muted); font-size: 11px; }
+    .legend-line { width: 28px; border-top: 2px solid #526177; }
+    .legend-line.dashed { border-top-style: dashed; border-top-color: var(--red); }
+    .legend-line.dotted { border-top-style: dotted; border-top-color: var(--purple); }
+    .legend-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); }
+    .note { color: var(--muted); font-size: 11px; line-height: 1.45; margin-top: 11px; }
+    .source-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
+    .source-links a { color: var(--accent); font-size: 11px; }
+
+    @media (max-width: 1050px) {
+      body { padding: 14px; }
+      .topbar { display: block; }
+      .contract-strip { justify-content: flex-start; margin-top: 13px; }
+      .workspace { grid-template-columns: 1fr; }
+      .detail-panel { position: static; }
+    }
+    @media (max-width: 600px) {
+      .summary { grid-template-columns: repeat(2, 1fr); }
+      .controls { align-items: stretch; }
+      .spacer { display: none; }
+      .search { width: 100%; min-width: 0; }
+      .bottom-grid { grid-template-columns: 1fr; }
+      .event { grid-template-columns: 62px 1fr; }
+      .event-detail { grid-column: 2; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell" id="dataflowManager">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">Varta realtime workflow</div>
+        <h1>Dynamic dataflow management</h1>
+        <p class="subtitle">Explore the browser-to-server-to-Sarvam path. Select a node to inspect its complete flow data, then run a normal or failure scenario to see state, identifiers, events, queues, and cleanup move through the system.</p>
+      </div>
+      <div class="contract-strip" aria-label="Contract summary">
+        <span class="contract-pill"><strong>ASR</strong> realtime WebSocket</span>
+        <span class="contract-pill"><strong>Audio in</strong> mono linear16 16 kHz</span>
+        <span class="contract-pill"><strong>Audio out</strong> linear16 24 kHz</span>
+        <span class="contract-pill"><strong>Turn</strong> one ID one terminal event</span>
+        <span class="contract-pill"><strong>Lease</strong> Redis SET NX EX</span>
+      </div>
+    </header>
+
+    <section class="controls" aria-label="Flow controls">
+      <div class="control-group">
+        <span class="control-label">Scenario</span>
+        <select class="control-select" id="scenarioSelect">
+          <option value="normal">Normal turn</option>
+          <option value="duplicate">Duplicate connection</option>
+          <option value="backpressure">Audio backpressure</option>
+          <option value="asrError">Fatal ASR error</option>
+          <option value="playback">Playback decode failure</option>
+        </select>
+      </div>
+      <button class="control-button primary" id="runButton" type="button">Run scenario</button>
+      <button class="control-button" id="stepButton" type="button">Step</button>
+      <button class="control-button" id="pauseButton" type="button">Pause</button>
+      <button class="control-button" id="resetButton" type="button">Reset</button>
+      <div class="control-group">
+        <span class="control-label">Show</span>
+        <select class="control-select" id="viewSelect">
+          <option value="all">All nodes</option>
+          <option value="normal">Normal path</option>
+          <option value="failure">Failure path</option>
+          <option value="validation">Validation and telemetry</option>
+        </select>
+      </div>
+      <input class="search" id="searchInput" type="search" placeholder="Find node, owner, or data" aria-label="Find node, owner, or data">
+      <div class="spacer"></div>
+      <span class="status-pill" id="runStatus" aria-live="polite">Ready</span>
+    </section>
+
+    <section class="summary" aria-label="Live flow summary">
+      <div class="summary-item"><div class="summary-label">Visible nodes</div><div class="summary-value accent" id="visibleCount">0</div></div>
+      <div class="summary-item"><div class="summary-label">Active node</div><div class="summary-value green" id="activeNode">None</div></div>
+      <div class="summary-item"><div class="summary-label">Flow events</div><div class="summary-value orange" id="eventCount">0</div></div>
+      <div class="summary-item"><div class="summary-label">Correlation</div><div class="summary-value purple" id="correlationStatus">Ready</div></div>
+      <div class="summary-item"><div class="summary-label">Terminal rule</div><div class="summary-value" id="terminalStatus">1 event</div></div>
+    </section>
+
+    <section class="workspace">
+      <div class="panel">
+        <div class="panel-heading">
+          <h2>Flow lanes</h2>
+          <span>Solid data flow · dashed failure · dotted telemetry</span>
+        </div>
+        <div class="flowboard" id="flowboard">
+          <div class="graph-inner" id="graphInner">
+            <svg id="edgeLayer" role="img" aria-label="Dataflow connections">
+              <defs>
+                <marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth">
+                  <path d="M0,0 L7,3.5 L0,7 z" fill="#526177"></path>
+                </marker>
+                <marker id="arrowActive" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth">
+                  <path d="M0,0 L7,3.5 L0,7 z" fill="#73d19a"></path>
+                </marker>
+              </defs>
+              <g id="edgeGroup"></g>
+            </svg>
+            <div class="lanes" id="lanes"></div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="panel detail-panel" aria-live="polite">
+        <div class="panel-heading"><h2>Selected node data</h2><span id="detailPosition">1 of 1</span></div>
+        <div class="detail-body" id="detailBody"></div>
+        <div class="data-section">
+          <h3>Correlation tokens</h3>
+          <div class="token-list" id="tokenList"></div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="bottom-grid">
+      <div class="panel">
+        <div class="panel-heading"><h2>Event and data movement log</h2><span id="logHint">Select a scenario and run it</span></div>
+        <div class="event-feed" id="eventFeed" aria-live="polite"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-heading"><h2>Reading key</h2><span>What to inspect</span></div>
+        <div class="legend">
+          <div class="legend-row"><i class="legend-line"></i> Control or payload flow</div>
+          <div class="legend-row"><i class="legend-line dashed"></i> Failure and recovery branch</div>
+          <div class="legend-row"><i class="legend-line dotted"></i> Metrics and test observation</div>
+          <div class="legend-row"><i class="legend-dot"></i> Currently active node</div>
+          <p class="note">For any selected node, read the owner, input, output, state, identifiers, failure behavior, metrics, and contract fields. These are the data needed to debug whether a failure belongs to the browser, Varta server, provider, or test harness.</p>
+          <div class="source-links">
+            <a href="https://docs.sarvam.ai/api/api-guides-tutorials/speech-to-text/realtime-streaming" target="_blank" rel="noreferrer">Sarvam realtime ASR</a>
+            <a href="https://docs.sarvam.ai/api-reference/speech-to-text/transcribe/realtime/ws" target="_blank" rel="noreferrer">ASR WebSocket reference</a>
+            <a href="https://docs.sarvam.ai/api/api-guides-tutorials/text-to-speech/streaming-api/web-socket" target="_blank" rel="noreferrer">Sarvam streaming TTS</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const lanes = [
+      { id: "browser", label: "Browser", subtitle: "capture and playback" },
+      { id: "server", label: "Varta server", subtitle: "ownership and routing" },
+      { id: "asr", label: "Sarvam ASR", subtitle: "realtime contract" },
+      { id: "pipeline", label: "NMT and TTS", subtitle: "translation and audio" },
+      { id: "validation", label: "Validation", subtitle: "browser evidence" },
+      { id: "failure", label: "Failure and recovery", subtitle: "terminal outcomes" }
+    ];
+
+    const nodes = [
+      { id: "B0", lane: "browser", title: "Session bootstrap", kind: "browser", owner: "app.js", input: "Language, speaker, and session request", output: "session_id and target language", state: "INIT to SESSION_READY", ids: "session_id", failure: "bootstrap_error if configuration cannot be created", metrics: "session_created and target_language_loaded", contract: "The browser receives configuration before opening a live turn.", next: "B1 and S0" },
+      { id: "B1", lane: "browser", title: "Connection registry", kind: "browser", owner: "app.js connRecords", input: "session_id plus speaker", output: "One state record per speaker", state: "IDLE to CONNECTING", ids: "session_id and connection_generation", failure: "Duplicate in-flight opens are returned to the same promise", metrics: "open_requested and generation_created", contract: "At most one browser owner exists for each session and speaker.", next: "B2" },
+      { id: "B2", lane: "browser", title: "WebSocket client", kind: "browser", owner: "wsClient.js", input: "Connection request", output: "Browser WebSocket", state: "CONNECTING to OPEN", ids: "connection_generation and openPromise", failure: "Open timeout; stale close cannot clear a newer generation", metrics: "opened, failed, closed, close_reason", contract: "The client has one open promise, one close promise, and generation checks.", next: "S1" },
+      { id: "B3", lane: "browser", title: "Browser ready state", kind: "browser", owner: "app.js", input: "server_ready", output: "Record control enabled", state: "OPEN and TURN_IDLE", ids: "session_id and connection_generation", failure: "No recorder starts before readiness", metrics: "server_ready_received", contract: "Ready includes ASR model, PCM format, and sample rate metadata.", next: "B4" },
+      { id: "B4", lane: "browser", title: "Turn start", kind: "browser", owner: "app.js", input: "Record action", output: "turn_start JSON", state: "IDLE to CAPTURING", ids: "turn_id, input_speaker, output_speaker", failure: "Second start rejected with one active turn", metrics: "turn_started and client_started_at", contract: "A new cryptographically random turn_id is generated once.", next: "S4 and B5" },
+      { id: "B5", lane: "browser", title: "Microphone capture", kind: "browser", owner: "recorder.js and getUserMedia", input: "MediaStream microphone track", output: "Browser-rate float samples", state: "CAPTURING", ids: "turn_id", failure: "Permission, track-ended, or worklet error", metrics: "recorder_started and input_sample_rate", contract: "The production recorder and AudioWorklet path must execute.", next: "B6" },
+      { id: "B6", lane: "browser", title: "PCM conversion", kind: "browser", owner: "pcm-processor.js", input: "16, 32, 44.1, or 48 kHz audio", output: "Mono linear16 PCM at 16 kHz", state: "CAPTURING", ids: "turn_id and input_rate", failure: "AUDIO_SAMPLE_RATE_UNSUPPORTED", metrics: "resampled_samples and rate_mismatch_count", contract: "Fractional resampling with anti-alias filtering preserves the 16 kHz ASR contract.", next: "B7" },
+      { id: "B7", lane: "browser", title: "Bounded send queue", kind: "browser", owner: "recorder.js", input: "20 ms PCM chunks", output: "Binary browser frames", state: "QUEUED to SENDING", ids: "turn_id and connection_generation", failure: "AUDIO_BACKPRESSURE after one second above high water", metrics: "depth, max_depth, dropped_chunks, high_water_ms", contract: "The queue never grows without a limit and never hides dropped speech.", next: "S4 and A2" },
+      { id: "B8", lane: "browser", title: "Stop recording", kind: "browser", owner: "app.js and recorder.js", input: "Stop action or fixture end", output: "stop_recording JSON", state: "CAPTURING to DRAINING", ids: "turn_id and client_stopped_at", failure: "Repeated stop is idempotent and all promises settle", metrics: "recorder_stopped and chunks_after_stop", contract: "No normal frame is sent after the stop boundary.", next: "S4 and A3" },
+      { id: "B9", lane: "browser", title: "Output player", kind: "browser", owner: "player.js", input: "Correlated audio_chunk messages", output: "Scheduled Web Audio playback", state: "IDLE to PLAYING", ids: "turn_id and playback_generation", failure: "Decode failure or stale-generation rejection", metrics: "audio_started, decoded_samples, audio_cleared", contract: "The output speaker reads format metadata and never accepts old-turn callbacks.", next: "B10" },
+      { id: "B10", lane: "browser", title: "Browser completion", kind: "browser", owner: "app.js and player.js", input: "audio_end then audio_finished", output: "Control unlocked", state: "PLAYING to COMPLETED to IDLE", ids: "turn_id and playback_generation", failure: "Stale completion ignored", metrics: "audio_finished and browser_lifecycle_clean", contract: "audio_end means server stream complete; audio_finished means browser playback complete.", next: "B4 or T3" },
+
+      { id: "S0", lane: "server", title: "Session service", kind: "server", owner: "web/server.py", input: "Session bootstrap request", output: "Session metadata and TTL", state: "SESSION_CREATING to SESSION_READY", ids: "session_id", failure: "Redis unavailable or invalid configuration", metrics: "session_ttl and session_config_loaded", contract: "Target language is stored outside the worker handling the later WebSocket.", next: "B1" },
+      { id: "S1", lane: "server", title: "WebSocket ownership manager", kind: "server", input: "Browser WebSocket request", output: "Worker-local owner", state: "ACCEPTING to OWNED", ids: "session_id, speaker, connection_generation", failure: "4409 DUPLICATE_CONNECTION", metrics: "owner_acquired and owner_rejected", contract: "One writer, one adapter, one reader, one active turn per owner.", next: "S2" },
+      { id: "S2", lane: "server", title: "Redis global lease", kind: "server", owner: "Redis and worker manager", input: "session_id plus input_speaker", output: "Lease token and expiry", state: "UNLEASED to LEASED", ids: "lease_key and lease_token", failure: "Lease race or missing Redis", metrics: "acquired, renewed, released", contract: "SET NX EX plus token-checked release protects two-worker ownership.", next: "A0 or F2" },
+      { id: "S3", lane: "server", title: "Server ready response", kind: "server", owner: "WebSocket manager", input: "Validated owner and ASR readiness", output: "server_ready", state: "OWNED to READY", ids: "session_id and connection_generation", failure: "Configuration or provider readiness rejection", metrics: "ready_sent", contract: "Includes protocol version, ASR model, encoding, and sample_rate_hz.", next: "B3" },
+      { id: "S4", lane: "server", title: "Turn validator", kind: "server", owner: "web/server.py", input: "turn_start, binary frames, stop_recording", output: "Accepted turn context", state: "READY to ACTIVE_TURN", ids: "turn_id, input_speaker, output_speaker", failure: "TURN_IN_PROGRESS or stale turn", metrics: "accepted_turns and stale_events", contract: "All browser frames are associated with the active turn before provider forwarding.", next: "A2, A3, and S5" },
+      { id: "S5", lane: "server", title: "Single browser writer", kind: "server", input: "Transcript, audio, and terminal events", output: "Ordered browser messages", state: "WRITING", ids: "turn_id and connection_generation", failure: "OUTBOUND_BACKPRESSURE", metrics: "queue_depth and send_latency", contract: "No concurrent senders and no audio_end after turn_error.", next: "B9 and B10" },
+      { id: "S6", lane: "server", title: "Server cleanup coordinator", kind: "server", input: "Disconnect, cancellation, error, or unload", output: "Closed owner and released resources", state: "ACTIVE to CLEANED", ids: "connection_generation and lease_token", failure: "Bounded forced cleanup if close hangs", metrics: "task_count and cleanup_duration", contract: "Cancels tasks, closes ASR and TTS, removes owner, releases lease.", next: "A0, P2, B9, and T3" },
+
+      { id: "A0", lane: "asr", title: "Realtime ASR connection", kind: "provider", owner: "adapter/sarvam_asr.py", input: "Server-side API key and query", output: "Saaras WebSocket", state: "DISCONNECTED to CONNECTING", ids: "request_id", failure: "Auth, quota, invalid params, or transient network close", metrics: "upstream_connects and reconnects", contract: "wss endpoint /speech-to-text-realtime/ws; key stays server-side.", next: "A1" },
+      { id: "A1", lane: "asr", title: "Sarvam contract handshake", kind: "provider", owner: "Sarvam ASR adapter", input: "Realtime endpoint and query", output: "session.begin", state: "CONNECTING to READY", ids: "request_id and resolved_config", failure: "session_begin_timeout or invalid parameter", metrics: "session_begin_received", contract: "saaras:v3-realtime, stream_type fast, endpointing manual, linear16, 16 kHz.", next: "S3 or F3" },
+      { id: "A2", lane: "asr", title: "ASR turn stream", kind: "provider", owner: "Sarvam ASR adapter", input: "Server PCM frames", output: "JSON base64 audio_input", state: "READY to STREAMING", ids: "turn_id and provider request_id", failure: "Queue overflow or upstream send failure", metrics: "frames_sent and queue_depth", contract: "Only mono signed linear16 PCM at exactly 16,000 or 8,000 Hz is valid; Varta uses 16,000.", next: "A4" },
+      { id: "A3", lane: "asr", title: "Speech boundary control", kind: "provider", owner: "Sarvam ASR adapter", input: "Turn start and stop", output: "speech_start and speech_end", state: "STREAMING to FINALIZING", ids: "turn_id", failure: "Duplicate boundary or forced watchdog", metrics: "boundary_count and flush_count", contract: "One speech_start, audio_input frames, one speech_end; flush only for forced finalization.", next: "A2 and A4" },
+      { id: "A4", lane: "asr", title: "Transcript event parser", kind: "provider", owner: "adapter/sarvam_asr.py", input: "partial, final, error, pong, session.end", output: "Normalized Varta events", state: "FINALIZING to RESULT or ERROR", ids: "turn_id, request_id, language", failure: "Structured fatal provider error", metrics: "error_code, fatality, audio_duration_s, close_reason", contract: "Parse transcripts, detected language, confidence, structured errors, pong, and session.end.", next: "S5, P0, F4" },
+
+      { id: "P0", lane: "pipeline", title: "Final transcript gate", kind: "pipeline", owner: "pipeline/single.py", input: "One transcript.final", output: "One pipeline job", state: "FINAL to PROCESSING", ids: "turn_id and finalization_flag", failure: "Duplicate final ignored", metrics: "final_events and deduplicated_events", contract: "Partial transcripts never start NMT or TTS; final work is correlated once.", next: "P1" },
+      { id: "P1", lane: "pipeline", title: "NMT translation", kind: "pipeline", owner: "Translation adapter", input: "Source text and target language", output: "Translated text", state: "PROCESSING", ids: "turn_id and target_language", failure: "NMT_TIMEOUT or provider_error", metrics: "translation_latency", contract: "Realtime ASR Odia or-IN is normalized to internal and TTS od-IN where required.", next: "P2" },
+      { id: "P2", lane: "pipeline", title: "Bulbul persistent connection", kind: "pipeline", owner: "adapter/sarvam_tts.py", input: "Owner and language configuration", output: "Reusable TTS WebSocket", state: "CLOSED to READY", ids: "tts_generation and owner_id", failure: "Fatal close or non-retryable auth/quota error", metrics: "tts_connects and reuse_count", contract: "Configure language_code, speaker, linear16, and 24 kHz; reuse only under a conversion lock.", next: "P3 or S6" },
+      { id: "P3", lane: "pipeline", title: "TTS conversion", kind: "pipeline", owner: "adapter/sarvam_tts.py", input: "Translated text", output: "convert, flush, AudioOutput", state: "READY to SYNTHESIZING", ids: "turn_id and tts_generation", failure: "TTS_FIRST_BYTE_TIMEOUT or completion timeout", metrics: "first_byte_latency and completion_latency", contract: "Each conversion is convert then flush and ends on the provider completion event.", next: "P4 or F5" },
+      { id: "P4", lane: "pipeline", title: "Audio output publisher", kind: "pipeline", owner: "Pipeline and browser writer", input: "Linear16 PCM chunks", output: "audio_chunk and audio_end", state: "SYNTHESIZING to SERVER_COMPLETE", ids: "turn_id and output_speaker", failure: "Queue overflow or TTS failure", metrics: "chunks_sent and audio_bytes", contract: "audio_chunk declares pcm_s16le, mono, and 24,000 Hz; audio_end is exactly once.", next: "S5" },
+
+      { id: "T0", lane: "validation", title: "Browser test fixture", kind: "validation", owner: "Playwright Chromium", input: "Deterministic MediaStream fixture", output: "Real production capture path", state: "TEST_READY", ids: "test_run_id and session_id", failure: "Fixture or permission failure", metrics: "browser event trace", contract: "No direct endpoint upload and no window.injectAudio bypass.", next: "B0" },
+      { id: "T1", lane: "validation", title: "Test hooks", kind: "validation", owner: "window.__vartaTestHooks", input: "Production lifecycle events", output: "State snapshots and subscriptions", state: "OBSERVING", ids: "turn_id and connection_generation", failure: "Missing instrumentation", metrics: "socket, turn, recorder, player counters", contract: "Read-only and test-gated; subscription returns unsubscribe.", next: "T3" },
+      { id: "T2", lane: "validation", title: "Provider observers", kind: "validation", owner: "Test adapter boundary", input: "ASR and TTS provider events", output: "Contract evidence", state: "OBSERVING", ids: "request_id and tts_generation", failure: "sarvam_contract_clean false", metrics: "params, event order, close codes, reuse", contract: "No API keys or transcript content are recorded.", next: "T3" },
+      { id: "T3", lane: "validation", title: "Release classification", kind: "validation", owner: "Browser test runner", input: "Browser, server, provider evidence", output: "Independent result dimensions", state: "CLASSIFYING to PASS or FAIL", ids: "test_run_id and turn_id", failure: "First violated invariant recorded", metrics: "browser_lifecycle_clean, browser_audio_output_clean, server_lifecycle_clean, sarvam_contract_clean, provider_pipeline_clean, overall_browser_turn_clean", contract: "The browser gate is separate from the historical Python endpoint smoke result.", next: "Release decision" },
+
+      { id: "F0", lane: "failure", title: "Browser connection failure", kind: "failure", owner: "Browser and server owner", input: "Open timeout or stale close", output: "connection_failed", state: "CONNECTING to RECOVERABLE_ERROR", ids: "connection_generation", failure: "Do not clear a newer generation", metrics: "open_failed and stale_close_ignored", contract: "No recorder start on an unopened socket.", next: "S6" },
+      { id: "F1", lane: "failure", title: "Audio backpressure", kind: "failure", owner: "Recorder and server writer", input: "Queue above high water for one second", output: "AUDIO_BACKPRESSURE", state: "CAPTURING to ERROR", ids: "turn_id", failure: "Stop capture and expose dropped chunks", metrics: "dropped_chunks and backpressure_duration", contract: "Bounded memory takes precedence over silent speech loss.", next: "S6" },
+      { id: "F2", lane: "failure", title: "Duplicate connection", kind: "failure", owner: "Redis lease and server manager", input: "Second owner attempt", output: "Close code 4409", state: "ACCEPTING to REJECTED", ids: "session_id and speaker", failure: "No blind browser retry", metrics: "owner_rejected and duplicate_connection", contract: "Reason is DUPLICATE_CONNECTION; this is distinct from TURN_IN_PROGRESS.", next: "S6" },
+      { id: "F3", lane: "failure", title: "ASR contract failure", kind: "failure", owner: "Sarvam adapter", input: "Invalid params or missing session.begin", output: "sarvam_contract_clean false", state: "CONNECTING to ERROR", ids: "request_id", failure: "Do not send audio; classify provider error", metrics: "invalid_params and session_begin_timeout", contract: "No legacy endpoint or unknown language code is allowed.", next: "S6" },
+      { id: "F4", lane: "failure", title: "Fatal provider failure", kind: "failure", owner: "ASR adapter and pipeline", input: "Fatal structured error or close", output: "turn_error", state: "ACTIVE to ERROR", ids: "turn_id and provider_error_code", failure: "No retry for fatal, auth, quota, or invalid params", metrics: "provider_error_fatal and close_reason", contract: "turn_error is terminal and is never followed by audio_end.", next: "S6" },
+      { id: "F5", lane: "failure", title: "NMT or TTS failure", kind: "failure", owner: "Pipeline and writer", input: "Translation or synthesis error", output: "Correlated turn_error", state: "SYNTHESIZING to ERROR", ids: "turn_id", failure: "Clear only matching output player generation", metrics: "nmt_error, tts_error, turn_error", contract: "Release server turn lock and keep next turn recoverable.", next: "S6" },
+      { id: "F6", lane: "failure", title: "Playback decode failure", kind: "failure", owner: "player.js and app.js", input: "Invalid or stale audio chunk", output: "Recoverable UI error", state: "PLAYING to ERROR", ids: "turn_id and playback_generation", failure: "Clear player and stop active recorder", metrics: "decode_error and stale_event_ignored", contract: "A provider result is not counted as browser audio success without decode evidence.", next: "S6" }
+    ];
+
+    const edges = [
+      ["B0", "S0", "normal"], ["S0", "B1", "normal"], ["B1", "B2", "normal"], ["B2", "S1", "normal"], ["S1", "S2", "normal"], ["S2", "A0", "normal"], ["A0", "A1", "normal"], ["A1", "S3", "normal"], ["S3", "B3", "normal"],
+      ["B3", "B4", "normal"], ["B4", "S4", "normal"], ["S4", "B5", "normal"], ["B5", "B6", "normal"], ["B6", "B7", "normal"], ["B7", "S4", "normal"], ["S4", "A3", "normal"], ["A3", "A2", "normal"], ["A2", "A4", "normal"], ["A4", "S5", "normal"], ["A4", "P0", "normal"],
+      ["P0", "P1", "normal"], ["P1", "P2", "normal"], ["P2", "P3", "normal"], ["P3", "P4", "normal"], ["P4", "S5", "normal"], ["S5", "B9", "normal"], ["B9", "B10", "normal"], ["B10", "B4", "normal"],
+      ["T0", "B0", "telemetry"], ["B2", "T1", "telemetry"], ["B4", "T1", "telemetry"], ["B7", "T1", "telemetry"], ["B9", "T1", "telemetry"], ["S1", "T2", "telemetry"], ["S4", "T2", "telemetry"], ["A4", "T2", "telemetry"], ["P4", "T2", "telemetry"], ["T1", "T3", "telemetry"], ["T2", "T3", "telemetry"], ["B10", "T3", "telemetry"],
+      ["B2", "F0", "failure"], ["B7", "F1", "failure"], ["S2", "F2", "failure"], ["A1", "F3", "failure"], ["A4", "F4", "failure"], ["P3", "F5", "failure"], ["B9", "F6", "failure"], ["F0", "S6", "failure"], ["F1", "S6", "failure"], ["F2", "S6", "failure"], ["F3", "S6", "failure"], ["F4", "S6", "failure"], ["F5", "S6", "failure"], ["F6", "S6", "failure"], ["S6", "A0", "failure"], ["S6", "P2", "failure"], ["S6", "B9", "failure"], ["S6", "T3", "failure"]
+    ];
+
+    const tokens = [
+      ["session_id", "Created by B0 and S0; carried through ownership, provider, metrics, and cleanup."],
+      ["connection_generation", "Created by B1; rejects stale socket events and old close callbacks."],
+      ["turn_id", "Created once at B4; carried through recorder, ASR, NMT, TTS, audio, and terminal event."],
+      ["lease_token", "Created by S2; renewed by the worker and released only when the token still matches."],
+      ["request_id", "Returned by Sarvam session.begin; used to correlate provider errors and billing evidence."],
+      ["playback_generation", "Created by B9; prevents cleared-player callbacks from completing a later turn."],
+      ["tts_generation", "Owned by P2; protects serialized Bulbul reuse and reconnection."],
+      ["test_run_id", "Created by T0; groups browser, server, provider, and release-classification evidence."]
+    ];
+
+    const scenarios = {
+      normal: { label: "Normal turn", path: ["T0", "B0", "S0", "B1", "B2", "S1", "S2", "A0", "A1", "S3", "B3", "B4", "S4", "B5", "B6", "B7", "A3", "A2", "A4", "P0", "P1", "P2", "P3", "P4", "S5", "B9", "B10", "T1", "T2", "T3"], event: "audio_end followed by audio_finished", terminal: "audio_end" },
+      duplicate: { label: "Duplicate connection", path: ["T0", "B0", "S0", "B1", "B2", "S1", "S2", "F2", "S6", "T2", "T3"], event: "4409 DUPLICATE_CONNECTION", terminal: "owner_rejected" },
+      backpressure: { label: "Audio backpressure", path: ["T0", "B0", "S0", "B1", "B2", "S1", "S2", "A0", "A1", "S3", "B3", "B4", "S4", "B5", "B6", "B7", "F1", "S6", "T1", "T3"], event: "AUDIO_BACKPRESSURE", terminal: "turn_error" },
+      asrError: { label: "Fatal ASR error", path: ["T0", "B0", "S0", "B1", "B2", "S1", "S2", "A0", "A1", "S3", "B3", "B4", "S4", "B5", "B6", "B7", "A3", "A2", "A4", "F4", "S6", "T2", "T3"], event: "fatal provider error; no retry", terminal: "turn_error" },
+      playback: { label: "Playback decode failure", path: ["T0", "B0", "S0", "B1", "B2", "S1", "S2", "A0", "A1", "S3", "B3", "B4", "S4", "B5", "B6", "B7", "A3", "A2", "A4", "P0", "P1", "P2", "P3", "P4", "S5", "B9", "F6", "S6", "T1", "T3"], event: "audio decode failure; recoverable UI error", terminal: "turn_error" }
+    };
+
+    const nodeById = Object.fromEntries(nodes.map(node => [node.id, node]));
+    const state = { selected: "B0", scenario: "normal", step: -1, timer: null, playing: false, view: "all", query: "", events: [] };
+    const $ = id => document.getElementById(id);
+
+    function makeNode(node) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `node ${node.kind}`;
+      button.dataset.id = node.id;
+      button.setAttribute("aria-label", `${node.id} ${node.title}`);
+      button.innerHTML = `<div class="node-kicker"><span>${node.id}</span><span>${node.state.split(" ")[0]}</span></div><div class="node-title">${node.title}</div><div class="node-owner">${node.owner || "Flow coordinator"}</div><div class="node-data"><div><span>In:</span> <b>${node.input}</b></div><div><span>Out:</span> <b>${node.output}</b></div></div><div class="node-tags"><span class="node-tag">${node.ids}</span><span class="node-tag">${node.metrics.split(" and ")[0]}</span></div>`;
+      button.addEventListener("click", () => selectNode(node.id));
+      return button;
+    }
+
+    function renderLanes() {
+      const root = $("lanes");
+      root.innerHTML = "";
+      lanes.forEach(lane => {
+        const section = document.createElement("section");
+        section.className = "lane";
+        section.dataset.lane = lane.id;
+        const laneNodes = nodes.filter(node => node.lane === lane.id);
+        section.innerHTML = `<div class="lane-heading"><div><strong>${lane.label}</strong><br><span>${lane.subtitle}</span></div><span class="lane-count">${laneNodes.length}</span></div>`;
+        const stack = document.createElement("div");
+        stack.className = "lane-nodes";
+        laneNodes.forEach(node => stack.appendChild(makeNode(node)));
+        section.appendChild(stack);
+        root.appendChild(section);
+      });
+      requestAnimationFrame(() => { drawEdges(); applyView(); });
+    }
+
+    function drawEdges() {
+      const inner = $("graphInner");
+      const layer = $("edgeLayer");
+      const group = $("edgeGroup");
+      const width = Math.max(inner.scrollWidth, inner.clientWidth);
+      const height = Math.max(inner.scrollHeight, inner.clientHeight);
+      layer.setAttribute("width", width);
+      layer.setAttribute("height", height);
+      layer.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      group.innerHTML = "";
+      edges.forEach(([from, to, type]) => {
+        const source = document.querySelector(`.node[data-id="${from}"]`);
+        const target = document.querySelector(`.node[data-id="${to}"]`);
+        if (!source || !target) return;
+        const a = source.getBoundingClientRect();
+        const b = target.getBoundingClientRect();
+        const r = inner.getBoundingClientRect();
+        const sameColumn = Math.abs((a.left + a.width / 2) - (b.left + b.width / 2)) < 90;
+        let x1, y1, x2, y2, d;
+        if (sameColumn && b.top > a.bottom - 12) {
+          x1 = a.left + a.width / 2 - r.left; y1 = a.bottom - r.top;
+          x2 = b.left + b.width / 2 - r.left; y2 = b.top - r.top;
+          const mid = (y1 + y2) / 2;
+          d = `M ${x1} ${y1} C ${x1} ${mid} ${x2} ${mid} ${x2} ${y2}`;
+        } else {
+          const forward = b.left >= a.right - 24;
+          x1 = (forward ? a.right : a.left) - r.left; y1 = a.top + a.height / 2 - r.top;
+          x2 = (forward ? b.left : b.right) - r.left; y2 = b.top + b.height / 2 - r.top;
+          const bend = Math.max(32, Math.abs(x2 - x1) * .42);
+          d = forward ? `M ${x1} ${y1} C ${x1 + bend} ${y1} ${x2 - bend} ${y2} ${x2} ${y2}` : `M ${x1} ${y1} C ${x1 + bend} ${y1} ${x2 + bend} ${y2} ${x2} ${y2}`;
+        }
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", d);
+        path.dataset.from = from;
+        path.dataset.to = to;
+        path.dataset.type = type;
+        path.classList.add("edge", type === "failure" ? "failure-edge" : type === "telemetry" ? "telemetry-edge" : "normal-edge");
+        path.setAttribute("marker-end", type === "normal" ? "url(#arrow)" : "url(#arrowActive)");
+        group.appendChild(path);
+      });
+      applyActiveEdges();
+    }
+
+    function applyActiveEdges() {
+      const active = new Set(state.step >= 0 ? scenarios[state.scenario].path.slice(0, state.step + 1) : []);
+      document.querySelectorAll(".edge").forEach(edge => {
+        const isActive = active.has(edge.dataset.from) && active.has(edge.dataset.to);
+        edge.classList.toggle("edge-active", isActive);
+        edge.classList.toggle("edge-off", state.view === "failure" && edge.dataset.type !== "failure" || state.view === "normal" && edge.dataset.type === "failure" || state.view === "validation" && edge.dataset.type !== "telemetry");
+      });
+    }
+
+    function applyView() {
+      const activePath = new Set(scenarios[state.scenario].path);
+      const q = state.query.trim().toLowerCase();
+      let visible = 0;
+      document.querySelectorAll(".node").forEach(button => {
+        const node = nodeById[button.dataset.id];
+        const searchable = `${node.id} ${node.title} ${node.owner} ${node.input} ${node.output} ${node.ids} ${node.metrics}`.toLowerCase();
+        const pathMatch = state.view === "all" || state.view === "validation" && node.kind === "validation" || state.view === "failure" && node.kind === "failure" || state.view === "normal" && node.kind !== "failure";
+        const matchesSearch = !q || searchable.includes(q);
+        button.classList.toggle("path-off", state.view === "normal" && !activePath.has(node.id) || state.view === "failure" && !activePath.has(node.id));
+        button.classList.toggle("search-off", !pathMatch || !matchesSearch);
+        button.classList.toggle("selected", node.id === state.selected);
+        button.classList.toggle("active", state.step >= 0 && activePath.has(node.id) && scenarios[state.scenario].path.indexOf(node.id) <= state.step);
+        if (!button.classList.contains("search-off")) visible += 1;
+      });
+      $("visibleCount").textContent = visible;
+      $("activeNode").textContent = state.step >= 0 ? `${scenarios[state.scenario].path[state.step]}` : "None";
+      $("correlationStatus").textContent = state.step >= 0 ? "Tracked" : "Ready";
+      $("terminalStatus").textContent = state.step >= 0 && state.step === scenarios[state.scenario].path.length - 1 ? scenarios[state.scenario].terminal : "1 event";
+      applyActiveEdges();
+    }
+
+    function selectNode(id) {
+      state.selected = id;
+      renderDetails();
+      applyView();
+      document.querySelector(`.node[data-id="${id}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+
+    function renderDetails() {
+      const node = nodeById[state.selected] || nodes[0];
+      $("detailBody").innerHTML = `<div class="detail-title">${node.title}</div><div class="detail-id">${node.id} · ${node.owner || "Flow coordinator"}</div><div class="detail-kind">${node.kind}</div><div class="detail-grid"><div class="detail-row"><div class="detail-label">Input</div><div class="detail-value">${node.input}</div></div><div class="detail-row"><div class="detail-label">Output</div><div class="detail-value">${node.output}</div></div><div class="detail-row"><div class="detail-label">State transition</div><div class="detail-value"><code>${node.state}</code></div></div><div class="detail-row"><div class="detail-label">Correlation data</div><div class="detail-value"><code>${node.ids}</code></div></div><div class="detail-row"><div class="detail-label">Failure behavior</div><div class="detail-value">${node.failure}</div></div><div class="detail-row"><div class="detail-label">Metrics and evidence</div><div class="detail-value">${node.metrics}</div></div><div class="detail-row"><div class="detail-label">Contract rule</div><div class="detail-value">${node.contract}</div></div><div class="detail-row"><div class="detail-label">Next flow</div><div class="detail-value">${node.next}</div></div></div>`;
+      const visibleNodes = nodes.filter(n => state.view === "all" || state.view === "validation" && n.kind === "validation" || state.view === "failure" && n.kind === "failure" || state.view === "normal" && n.kind !== "failure");
+      $("detailPosition").textContent = `${Math.max(1, visibleNodes.findIndex(n => n.id === node.id) + 1)} of ${visibleNodes.length}`;
+    }
+
+    function renderTokens() {
+      $("tokenList").innerHTML = tokens.map(([name, detail]) => `<div class="token"><code>${name}</code><span>${detail}</span></div>`).join("");
+    }
+
+    function addEvent(id, index, scenario) {
+      const node = nodeById[id];
+      const timestamp = `${String(index + 1).padStart(2, "0")}.${String((index * 17) % 1000).padStart(3, "0")}`;
+      const terminal = index === scenario.path.length - 1;
+      const failure = node.kind === "failure";
+      const detail = terminal ? `${scenario.terminal}; ${scenario.event}` : `${node.output}; state ${node.state}`;
+      state.events.unshift({ timestamp, name: terminal ? scenario.terminal : node.title, detail, failure });
+      state.events = state.events.slice(0, 30);
+      $("eventFeed").innerHTML = state.events.map(event => `<div class="event ${event.failure ? "failure-event" : ""}"><span class="event-time">${event.timestamp}</span><span class="event-name">${event.name}</span><span class="event-detail">${event.detail}</span></div>`).join("");
+      $("eventCount").textContent = state.events.length;
+      $("logHint").textContent = `${scenario.label} · ${state.step + 1} of ${scenario.path.length} nodes`;
+    }
+
+    function advance() {
+      const scenario = scenarios[state.scenario];
+      if (state.step >= scenario.path.length - 1) {
+        stopPlayback();
+        $("runStatus").textContent = `Complete · ${scenario.terminal}`;
+        return;
+      }
+      state.step += 1;
+      const id = scenario.path[state.step];
+      selectNode(id);
+      addEvent(id, state.step, scenario);
+      $("runStatus").textContent = `${scenario.label} · ${id}`;
+      if (state.step === scenario.path.length - 1) stopPlayback();
+    }
+
+    function startPlayback() {
+      stopPlayback();
+      state.playing = true;
+      $("pauseButton").textContent = "Pause";
+      state.timer = setInterval(() => advance(), 650);
+      advance();
+    }
+
+    function stopPlayback() {
+      if (state.timer) clearInterval(state.timer);
+      state.timer = null;
+      state.playing = false;
+      $("pauseButton").textContent = "Play";
+    }
+
+    function reset() {
+      stopPlayback();
+      state.step = -1;
+      state.events = [];
+      $("eventFeed").innerHTML = `<div class="event"><span class="event-time">--</span><span class="event-name">Ready</span><span class="event-detail">Run a scenario or select a node to inspect its data contract.</span></div>`;
+      $("eventCount").textContent = "0";
+      $("runStatus").textContent = "Ready";
+      $("logHint").textContent = "Select a scenario and run it";
+      renderDetails();
+      applyView();
+    }
+
+    $("scenarioSelect").addEventListener("change", event => { state.scenario = event.target.value; reset(); });
+    $("viewSelect").addEventListener("change", event => { state.view = event.target.value; applyView(); renderDetails(); });
+    $("searchInput").addEventListener("input", event => { state.query = event.target.value; applyView(); });
+    $("runButton").addEventListener("click", startPlayback);
+    $("stepButton").addEventListener("click", advance);
+    $("pauseButton").addEventListener("click", () => state.playing ? stopPlayback() : startPlayback());
+    $("resetButton").addEventListener("click", reset);
+    window.addEventListener("resize", () => requestAnimationFrame(drawEdges));
+
+    renderLanes();
+    renderTokens();
+    renderDetails();
+    reset();
+  </script>
+</body>
+</html>

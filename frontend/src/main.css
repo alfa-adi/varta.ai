@@ -60,6 +60,10 @@
            shadow-lg shadow-speaker-b/25 focus:ring-speaker-b;
   }
 
+  .btn-record:disabled {
+    @apply cursor-not-allowed opacity-35 grayscale;
+  }
+
   .bubble {
     @apply animate-slide-up px-4 py-3 rounded-2xl max-w-[90%] text-sm leading-relaxed;
   }

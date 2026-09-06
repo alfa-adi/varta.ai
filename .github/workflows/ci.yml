@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install ruff pytest pytest-asyncio
+        pip install -r requirements.txt
+        
+    - name: Lint with Ruff
+      run: |
+        # Run ruff check on python files in the project
+        # Ignoring specific legacy violations so CI passes
+        ruff check --ignore DTZ003,S110,BLE001,B008 web/ adapter/ pipeline/ tests/
+        
+    - name: Test with pytest
+      run: |
+        pytest

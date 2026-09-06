@@ -6,9 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e:browser-stream": "npx playwright test --project=chromium-fake-mic",
+    "test:e2e:browser-stream:stress": "cross-env VARTA_STRESS_TURNS=100 npx playwright test tests/stress.spec.js --project=chromium-fake-mic",
+    "test:e2e:browser-stream:headed": "npx playwright test --project=chromium-fake-mic --headed"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "autoprefixer": "^10.5.4",
     "postcss": "^8.5.26",
     "tailwindcss": "^3.4.19",

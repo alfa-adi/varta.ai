@@ -7,8 +7,6 @@ The rest of the system ONLY speaks these types — never raw API shapes.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
-
 
 # ── ASR ──────────────────────────────────────────────────────────────────────
 
@@ -17,7 +15,7 @@ class ASRInput:
     """What you hand to any ASR adapter."""
     audio_bytes: bytes          # Raw audio content
     audio_format: str = "wav"   # wav | mp3 | ogg | webm etc.
-    language_hint: Optional[str] = None  # BCP-47 e.g. "hi-IN". None = auto-detect.
+    language_hint: str | None = None  # BCP-47 e.g. "hi-IN". None = auto-detect.
     mode: str = "transcribe"    # transcribe | codemix | verbatim | translit
 
 

@@ -36,14 +36,17 @@ PARALLELISM: Both ASR calls run simultaneously (asyncio.gather).
 
 import asyncio
 import time
-from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from dataclasses import dataclass
 
 from adapter.base import BaseASRAdapter, BaseNMTAdapter, BaseTTSAdapter
 from pipeline.types import (
-    ASRInput, NMTInput, TTSInput,
-    ASROutput, NMTOutput, TTSOutput,
-    PipelineResult
+    ASRInput,
+    ASROutput,
+    NMTInput,
+    NMTOutput,
+    PipelineResult,
+    TTSInput,
+    TTSOutput,
 )
 
 
@@ -66,13 +69,13 @@ class SessionState:
     their language is detected), the buffered transcript can be
     processed through NMT → TTS.
     """
-    lang_a: Optional[str] = None    # Speaker A's detected language (BCP-47)
-    lang_b: Optional[str] = None    # Speaker B's detected language (BCP-47)
+    lang_a: str | None = None    # Speaker A's detected language (BCP-47)
+    lang_b: str | None = None    # Speaker B's detected language (BCP-47)
 
     # Buffered transcript from the first speaker who speaks before
     # the other speaker's language is known
-    pending_transcript_a: Optional[str] = None   # Speaker A spoke, waiting for lang_b
-    pending_transcript_b: Optional[str] = None   # Speaker B spoke, waiting for lang_a
+    pending_transcript_a: str | None = None   # Speaker A spoke, waiting for lang_b
+    pending_transcript_b: str | None = None   # Speaker B spoke, waiting for lang_a
 
     def both_known(self) -> bool:
         return self.lang_a is not None and self.lang_b is not None
@@ -85,8 +88,8 @@ class SpeakerResult:
     Contains the speaker's own result PLUS an optional deferred result
     for the other speaker whose transcript was buffered earlier.
     """
-    result: Optional[PipelineResult] = None            # This speaker's translation
-    deferred_result: Optional[PipelineResult] = None   # Buffered speaker's translation (if any)
+    result: PipelineResult | None = None            # This speaker's translation
+    deferred_result: PipelineResult | None = None   # Buffered speaker's translation (if any)
     buffered: bool = False                              # True if this speaker's audio was buffered (no result yet)
 
 
@@ -130,10 +133,10 @@ class DualPipeline:
         asr: BaseASRAdapter,
         nmt: BaseNMTAdapter,
         tts: BaseTTSAdapter,
-        initial_lang_a: Optional[str] = None,   # From UI declaration
-        initial_lang_b: Optional[str] = None,   # From UI declaration
-        pending_transcript_a: Optional[str] = None,
-        pending_transcript_b: Optional[str] = None,
+        initial_lang_a: str | None = None,   # From UI declaration
+        initial_lang_b: str | None = None,   # From UI declaration
+        pending_transcript_a: str | None = None,
+        pending_transcript_b: str | None = None,
     ):
         self.asr = asr
         self.nmt = nmt
@@ -153,10 +156,10 @@ class DualPipeline:
         self,
         audio_bytes:   bytes,
         audio_format:  str,
-        language_hint: Optional[str],   # Hint for ASR
+        language_hint: str | None,   # Hint for ASR
         tgt_language:  str,             # Where to translate TO
         voice_gender:  str,
-    ) -> Tuple[PipelineResult, str]:
+    ) -> tuple[PipelineResult, str]:
         """
         Run ASR → NMT → TTS for one speaker.
         Returns (PipelineResult, detected_source_language).

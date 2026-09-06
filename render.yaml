@@ -2,7 +2,9 @@ services:
   - type: web
     name: varta-ai
     runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn web.server:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
+    buildCommand: cd frontend && npm install && npm run build && cd .. && pip install -r requirements.txt
+    # Run with a single worker for the first rollout since Redis is not yet configured.
+    # Scale back to -w 2 once Render Redis is attached.
+    startCommand: gunicorn web.server:app -w 1 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     nativePackages:
       - name: ffmpeg

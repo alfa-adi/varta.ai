@@ -22,11 +22,11 @@ API details (confirmed from docs.sarvam.ai):
 """
 
 import time
+
 import httpx
 
 from adapter.base import BaseNMTAdapter
 from pipeline.types import NMTInput, NMTOutput
-
 
 SARVAM_TRANSLATE_ENDPOINT = "https://api.sarvam.ai/translate"
 MODEL_ID = "sarvam/sarvam-translate:v1"

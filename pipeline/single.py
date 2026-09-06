@@ -24,13 +24,11 @@ Usage:
 """
 
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import AsyncIterator, Optional
 
 from adapter.base import BaseASRAdapter, BaseNMTAdapter, BaseTTSAdapter
-from pipeline.types import (
-    ASRInput, NMTInput, TTSInput, PipelineResult
-)
+from pipeline.types import ASRInput, NMTInput, PipelineResult, TTSInput
 
 
 @dataclass
@@ -89,12 +87,14 @@ class SinglePipeline:
         )
 
         # ── Step 3: TTS ──────────────────────────────────────────────
+        # Bulbul v3 outputs raw linear16 PCM (pcm_s16le, 24 kHz, mono).
+        # audio_format is informational for the TTSOutput wrapper only.
         tts_output = await self.tts_adapter.synthesise(
             TTSInput(
                 text         = nmt_output.translated_text,
                 language     = self.tgt_language,
                 voice_gender = voice_gender,
-                audio_format = "mp3",   # mp3 is smallest — good for web
+                audio_format = "pcm",
             )
         )
 
@@ -135,19 +135,20 @@ class SinglePipeline:
     ) -> AsyncIterator[bytes]:
         """
         Live streaming path — ASR is already done via the persistent WS.
-        Takes a ready final transcript, runs NMT, then streams TTS opus chunks.
+        Takes a ready final transcript, runs NMT, then streams TTS audio.
 
-        Yields raw opus bytes as each chunk arrives from Bulbul v3.
-        First byte arrives in ~100–200ms (NMT) + ~100ms (TTS first chunk).
-        Caller should forward each chunk to the browser immediately over WS.
+        Yields raw linear16 PCM bytes (mono, 24,000 Hz) as each chunk arrives
+        from Bulbul v3. First byte arrives in ~100–200 ms (NMT) + ~100 ms
+        (TTS first chunk). Caller should forward each chunk to the browser
+        immediately over WebSocket as a base64-encoded audio_chunk message.
 
         Args:
-            transcript:   Final transcript from SarvamLiveASRAdapter.flush_utterance()
+            transcript:   Final transcript from SarvamLiveASRAdapter.signal_speech_end()
             src_language: Detected source language (BCP-47 e.g. "hi-IN")
             voice_gender: "female" or "male" (default "female")
 
         Yields:
-            bytes — decoded opus audio chunks, each 20–80ms of audio
+            bytes — raw linear16 PCM audio chunks (pcm_s16le, 24 kHz, mono)
         """
         # ── Step 1: NMT — translate the final transcript ──────────────
         # This is a single REST call (~200-400ms). No ASR step here.

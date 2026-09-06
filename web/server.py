@@ -9,12 +9,18 @@ Endpoints:
   POST /translate/dual    → Both speakers simultaneously
   POST /translate/speaker_a → Speaker A's turn only
   POST /translate/speaker_b → Speaker B's turn only
-  POST /metrics/browser   → Receive browser-side timing data
+  POST /metrics/browser   → Receive browser-side lifecycle event stream
   POST /session/create    → Create a new translation session
+  WS   /ws/asr/{session_id}/{speaker} → Live ASR/NMT/TTS relay
 
-Sessions are stored in-memory (dict keyed by session_id).
-For production, use Redis. For the PoC, memory is fine.
+Deployment notes:
+  - Two-worker mode (gunicorn -w 2) requires REDIS_URL.
+    Session config and cross-worker connection leases are stored in Redis.
+    Startup will fail loudly if two-worker mode is enabled without Redis.
+  - Live adapters (SarvamLiveASRAdapter, Bulbul WS) are worker-local.
+    They cannot be serialized to Redis.
 """
+
 
 import asyncio
 import base64
@@ -23,10 +29,17 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -35,6 +48,28 @@ from adapter.sarvam_nmt import SarvamNMTAdapter
 from adapter.sarvam_tts import SarvamTTSAdapter
 from pipeline.dual import DualPipeline
 from pipeline.single import SinglePipeline
+from web.connection_manager import (
+    acquire_connection,
+    acquire_session_turn,
+    release_session_turn,
+)
+from web.protocol import (
+    AUDIO_CHANNELS,
+    AUDIO_FORMAT,
+    AUDIO_SAMPLE_RATE,
+    MSG_AUDIO_CHUNK,
+    MSG_LANGUAGE_DETECTED,
+    MSG_SERVER_READY,
+    MSG_STOP_RECORDING,
+    MSG_TRANSCRIPT_FINAL,
+    MSG_TRANSCRIPT_PARTIAL,
+    MSG_TURN_ERROR,
+    MSG_TURN_START,
+    PROTOCOL_VERSION,
+    TurnErrorCode,
+    WSCloseCode,
+    redis_asr_lang_key,
+)
 
 # ── Bootstrap ────────────────────────────────────────────────────────────────
 
@@ -44,36 +79,34 @@ API_KEY = os.getenv("SARVAM_API_KEY")
 if not API_KEY:
     raise RuntimeError("SARVAM_API_KEY not found in environment. Copy .env.example to .env and set it.")
 
-# Build one set of adapter instances — shared across all pipelines and sessions
-# (They are stateless, so sharing is safe and saves connection pool resources)
+# Worker count — set by gunicorn via WEB_CONCURRENCY or explicit env var
+_WORKER_COUNT = int(os.getenv("WEB_CONCURRENCY", "1"))
+
+# Shared stateless adapter instances (safe to share across sessions)
 _asr = SarvamASRAdapter(API_KEY)
 _nmt = SarvamNMTAdapter(API_KEY)
 _tts = SarvamTTSAdapter(API_KEY)
 
-# ── Live ASR session registry ─────────────────────────────────────────────────
-# Maps "{session_id}:{speaker}" → SarvamLiveASRAdapter
-# Stored in-process — WebSocket objects cannot be serialized to Redis.
-# Each entry holds a persistent connection to saaras:v3-realtime.
-# One entry per speaker ("a" or "b") per session.
-_live_asr_sessions: dict[str, SarvamLiveASRAdapter] = {}
+# NOTE: _live_asr_sessions has been removed.
+# Live adapters are now owned exclusively by LiveConnectionOwner instances
+# in web/connection_manager.py. An adapter is created fresh per connection
+# and closed deterministically when the connection owner is released.
 
-# In-memory session store: session_id → DualPipeline instance
-# Each session has its own SessionState (detected languages per speaker)
-# ── Session Store ────────────────────────────────────────────
-REDIS_URL = os.getenv("REDIS_URL")
+# ── Session Store ────────────────────────────────────────────────────────────
+REDIS_URL   = os.getenv("REDIS_URL")
 SESSION_TTL = 60 * 60 * 2   # 2 hours in seconds
 
 _local_sessions: dict[str, dict] = {}
-
 _redis = None
+
 if REDIS_URL:
     try:
         import redis as redis_lib
         _redis = redis_lib.from_url(REDIS_URL, decode_responses=True)
         _redis.ping()
-        print("  Redis connected — sessions persist across restarts")
+        print("  Redis connected — sessions and leases persist across restarts")
     except Exception as e:
-        print(f"  Redis connection failed ({e}) — falling back to in-memory")
+        print(f"  Redis connection failed ({e})")
         _redis = None
 else:
     print("  No REDIS_URL — using in-memory sessions (local mode)")
@@ -91,15 +124,15 @@ _mongo_metrics = None   # latency metrics database handle
 
 if MONGO_URL:
     try:
+
         from pymongo import MongoClient
-        from datetime import datetime
         _mongo_client = MongoClient(MONGO_URL, serverSelectionTimeoutMS=3000)
         _mongo_client.server_info()   # fail fast if connection is broken
         _mongo         = _mongo_client[MONGO_DB]
         _mongo_metrics = _mongo_client["varta_metrics"]
         print("✅  MongoDB connected")
         print(f"    logs    → {MONGO_DB}")
-        print(f"    metrics → varta_metrics")
+        print("    metrics → varta_metrics")
     except Exception as e:
         print(f"[WARN] MongoDB failed ({e}) - logging disabled")
         _mongo         = None
@@ -108,9 +141,9 @@ else:
     print("[INFO] No MONGO_URL - logging disabled (local mode)")
 
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
 
 # get_remote_address reads the caller's IP from the incoming request
 # This is the "key" — one counter per IP address per time window
@@ -502,7 +535,6 @@ async def translate_single(
     timing["server"]["total_ms"] = total_server_ms
 
     # ── Write metrics (fire-and-forget, after response is built) ──
-    metrics_start = int(time.time() * 1000)
     log_metrics(
         session_id = "single",
         endpoint   = "single",
@@ -931,168 +963,244 @@ def _save_detected_language(session_id: str, speaker: str, language: str) -> Non
 @app.websocket("/ws/asr/{session_id}/{speaker}")
 async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
     """
-    Live ASR WebSocket endpoint — one connection per speaker per session.
+    Live ASR WebSocket endpoint — one connection owner per (session_id, speaker).
 
-    Protocol (browser → server):
-      Binary frames  — raw PCM (pcm_s16le, 16kHz, mono) audio chunks
-                       sent continuously while the user is recording.
-      Text JSON      — control messages:
-        {"type": "stop_recording"}   stop recording, flush utterance,
-                                     trigger NMT+TTS pipeline
-
-    Protocol (server → browser):
-      {"type": "transcript_partial", "transcript": str}  — live partial update
-      {"type": "transcript_final",   "transcript": str}  — confirmed final text
-      {"type": "language_detected",  "language": str}    — detected BCP-47 code
-      {"type": "audio_chunk",  "data": b64, "format": "opus"}  — TTS chunk
-      {"type": "audio_end"}                              — all TTS chunks sent
-      {"type": "error",        "message": str}           — pipeline error
-
-    The Saaras WS (SarvamLiveASRAdapter) stays alive between turns.
-    Only the browser WS disconnecting triggers a close + cleanup.
+    Invariants:
+      - One LiveConnectionOwner registered per key (duplicate → 4409 close).
+      - One browser writer task; transcript reader and NMT/TTS never send directly.
+      - Every outbound message carries turn_id.
+      - audio_end and turn_error are mutually exclusive terminal events.
+      - On disconnect/cancel, owner.release() closes adapter and removes lease.
     """
     if speaker not in ("a", "b"):
         await websocket.close(code=1003, reason="speaker must be 'a' or 'b'")
         return
 
     await websocket.accept()
-    session_key = f"{session_id}:{speaker}"
-    print(f"[WS/ASR] Connected: session={session_id} speaker={speaker}")
+    other_speaker = "b" if speaker == "a" else "a"
+    print(f"[WS/ASR] Accepted: session={session_id} speaker={speaker}")
 
-    # ── Create or reuse persistent Saaras connection ──────────────────
-    if session_key not in _live_asr_sessions:
-        adapter = SarvamLiveASRAdapter(API_KEY)
-        # Retrieve previously detected language for this speaker (if any)
-        detected_lang = ""
-        if _redis:
-            detected_lang = _redis.get(f"asr:lang:{speaker}:{session_id}") or ""
-        else:
-            detected_lang = _local_sessions.get(f"__asr_lang_{speaker}_{session_id}", "")
+    # ── Load session config (required before accepting a turn) ────────────
+    state = load_session(session_id)
+    if state is None:
+        await websocket.send_json({
+            "type":    MSG_TURN_ERROR,
+            "turn_id": None,
+            "code":    TurnErrorCode.SESSION_NOT_FOUND,
+            "message": "Session not found. Please refresh and start a new session.",
+            "retryable": False,
+        })
+        await websocket.close(code=WSCloseCode.POLICY_VIOLATION, reason="SESSION_NOT_FOUND")
+        return
 
-        await adapter.start_session(language_hint=detected_lang or "auto")
-        _live_asr_sessions[session_key] = adapter
-        print(f"[WS/ASR] New Saaras session for {session_key}")
+    # ── Retrieve previously detected language for this speaker ────────────
+    detected_lang = ""
+    if _redis:
+        detected_lang = _redis.get(redis_asr_lang_key(session_id, speaker)) or ""
     else:
-        adapter = _live_asr_sessions[session_key]
-        print(f"[WS/ASR] Reusing existing Saaras session for {session_key}")
+        detected_lang = _local_sessions.get(f"__asr_lang_{speaker}_{session_id}", "")
 
-    # Determine target language (the OTHER speaker's language) from session store
+    # ── Create a fresh adapter for this connection ────────────────────────
+    adapter = SarvamLiveASRAdapter(API_KEY)
+    await adapter.start_session(language_hint=detected_lang or "")
+
+    # ── Acquire connection ownership (Redis lease + process registry) ──────
+    owner = await acquire_connection(session_id, speaker, websocket, adapter, redis=_redis)
+    if owner is None:
+        # acquire_connection already closed the websocket with 4409
+        return
+
+    # ── Send server_ready ─────────────────────────────────────────────────
+    await owner.enqueue({
+        "type":             MSG_SERVER_READY,
+        "protocol_version": PROTOCOL_VERSION,
+        "session_id":       session_id,
+        "input_speaker":    speaker,
+        "asr_model":        "saaras:v3-realtime",
+        "encoding":         "linear16",
+        "sample_rate_hz":   16_000,
+    })
+
+    # ── Turn state ────────────────────────────────────────────────────────
+    active_turn_id: str | None = None
+    turn_lock     = asyncio.Lock()
+    terminal_sent = False
+
+    async def _release_active_turn(turn_id: str) -> None:
+        """Clear local ownership and release the cross-speaker session slot."""
+        nonlocal active_turn_id
+        async with turn_lock:
+            if active_turn_id == turn_id:
+                active_turn_id = None
+            if owner.active_turn_id == turn_id:
+                owner.active_turn_id = None
+        await release_session_turn(
+            session_id,
+            speaker,
+            turn_id,
+            redis=_redis,
+        )
+
     def _get_tgt_lang() -> str:
-        state = load_session(session_id)
-        if not state:
-            return "en-IN"  # fallback
-        other = "b" if speaker == "a" else "a"
-        return state.get(f"lang_{other}") or "en-IN"
+        s = load_session(session_id)
+        if not s:
+            return "en-IN"
+        return s.get(f"lang_{other_speaker}") or "en-IN"
 
-    async def transcript_broadcaster():
-        """Continuously reads from adapter's queue and sends to browser instantly."""
-        audio_end_sent = False
+    # ── Turn pipeline (NMT + TTS) — isolated asyncio task ────────────────
+
+    async def run_turn_pipeline(turn_id: str, final_text: str, src_lang: str) -> None:
+        nonlocal terminal_sent
+        try:
+            tgt_lang = _get_tgt_lang()
+            pipeline = SinglePipeline(
+                asr_adapter  = _asr,
+                nmt_adapter  = _nmt,
+                tts_adapter  = _tts,
+                src_language = src_lang or "auto",
+                tgt_language = tgt_lang,
+            )
+            chunk_count = 0
+            async for audio_chunk in pipeline.run_from_transcript(
+                transcript=final_text, src_language=src_lang or "auto",
+            ):
+                await owner.enqueue({
+                    "type":           MSG_AUDIO_CHUNK,
+                    "turn_id":        turn_id,
+                    "format":         AUDIO_FORMAT,
+                    "sample_rate_hz": AUDIO_SAMPLE_RATE,
+                    "channels":       AUDIO_CHANNELS,
+                    "data":           base64.b64encode(audio_chunk).decode(),
+                })
+                chunk_count += 1
+
+            if not terminal_sent:
+                terminal_sent = True
+                await owner.send_audio_end(turn_id, reason="completed")
+                print(f"[WS/ASR] turn={turn_id} audio_end chunks={chunk_count}")
+
+        except asyncio.CancelledError:
+            if not terminal_sent:
+                terminal_sent = True
+                try:
+                    await owner.send_turn_cancelled(turn_id, reason="pipeline_cancelled")
+                except Exception:
+                    pass
+        except Exception as exc:
+            print(f"[WS/ASR] Pipeline error turn={turn_id}: {exc}")
+            if not terminal_sent:
+                terminal_sent = True
+                try:
+                    await owner.send_turn_error(
+                        turn_id, TurnErrorCode.NMT_ERROR, str(exc), retryable=True
+                    )
+                except Exception:
+                    pass
+        finally:
+            await _release_active_turn(turn_id)
+
+    # ── Transcript reader — forwards frames to outbound queue ─────────────
+
+    async def transcript_reader() -> None:
+        nonlocal active_turn_id, terminal_sent
         try:
             async for frame in adapter.listen_transcripts():
-                text = frame["transcript"]
-                lang = frame["language"]
-                is_partial = frame["is_partial"]
+                turn_id = active_turn_id
+                if turn_id is None:
+                    continue  # no active turn; stale frame
 
-                # Buffer in Redis for audit / recovery
-                try:
-                    _push_transcript(session_id, speaker, text, is_partial)
-                except Exception as e:
-                    print(f"[WS/ASR] Redis push error: {e}")
+                if "_provider_error" in frame:
+                    err = frame["_provider_error"]
+                    if not terminal_sent:
+                        terminal_sent = True
+                        await owner.send_turn_error(
+                            turn_id,
+                            TurnErrorCode.UPSTREAM_RECONNECT_FAILED,
+                            f"Provider error: {err.get('message', '')}",
+                            retryable=False,
+                        )
+                    await _release_active_turn(turn_id)
+                    return
 
-                # Update in-process language cache
+                text    = frame["transcript"]
+                lang    = frame["language"]
+                partial = frame["is_partial"]
+
                 if lang:
                     _save_detected_language(session_id, speaker, lang)
 
-                # Forward to browser for live UI update
-                msg_type = "transcript_partial" if is_partial else "transcript_final"
-                await websocket.send_json({
-                    "type": msg_type,
-                    "transcript": text,
-                })
-
-                if not is_partial:
-                    final_text = text
-                    detected_language = lang or adapter.detected_language
-
-                    # Send detected language to browser
-                    if detected_language:
-                        await websocket.send_json({
-                            "type": "language_detected",
-                            "language": detected_language,
-                            "speaker": speaker,
+                if partial:
+                    await owner.enqueue({
+                        "type":          MSG_TRANSCRIPT_PARTIAL,
+                        "turn_id":       turn_id,
+                        "text":          text,
+                        "language_code": lang,
+                    })
+                else:
+                    confidence = frame.get("language_confidence")
+                    await owner.enqueue({
+                        "type":                MSG_TRANSCRIPT_FINAL,
+                        "turn_id":             turn_id,
+                        "text":                text,
+                        "language_code":       lang,
+                        "language_confidence": confidence,
+                    })
+                    if lang:
+                        await owner.enqueue({
+                            "type":          MSG_LANGUAGE_DETECTED,
+                            "turn_id":       turn_id,
+                            "language_code": lang,
                         })
-                        # Persist detected language into session state
-                        state = load_session(session_id)
-                        if state is not None:
-                            state[f"lang_{speaker}"] = detected_language
+                        s = load_session(session_id)
+                        if s is not None:
+                            s[f"lang_{speaker}"] = lang
                             save_session(
                                 session_id,
-                                state.get("lang_a"),
-                                state.get("lang_b"),
-                                state.get("pending_transcript_a"),
-                                state.get("pending_transcript_b"),
+                                s.get("lang_a"), s.get("lang_b"),
+                                s.get("pending_transcript_a"),
+                                s.get("pending_transcript_b"),
                             )
 
-                    # ── NMT + TTS streaming pipeline ──────────────────
-                    if final_text:
-                        tgt_lang = _get_tgt_lang()
-
-                        # Build a lean pipeline for the streaming path
-                        from pipeline.single import SinglePipeline
-                        pipeline = SinglePipeline(
-                            asr_adapter  = _asr,
-                            nmt_adapter  = _nmt,
-                            tts_adapter  = _tts,
-                            src_language = detected_language or "auto",
-                            tgt_language = tgt_lang,
+                    if text:
+                        owner._turn_task = asyncio.create_task(
+                            run_turn_pipeline(turn_id, text, lang or adapter.detected_language),
+                            name=f"turn-pipeline:{turn_id}",
                         )
-
-                        try:
-                            async for audio_chunk in pipeline.run_from_transcript(
-                                transcript   = final_text,
-                                src_language = detected_language or "auto",
-                            ):
-                                await websocket.send_json({
-                                    "type":   "audio_chunk",
-                                    "data":   base64.b64encode(audio_chunk).decode(),
-                                    "format": "pcm",
-                                })
-                        except Exception as exc:
-                            print(f"[WS/ASR] Pipeline error: {exc}")
-                            await websocket.send_json({
-                                "type":    "error",
-                                "message": str(exc),
-                            })
                     else:
-                        # No speech detected — Saaras returned empty transcript.
-                        # Still need to reset the UI on the browser side.
-                        await websocket.send_json({
-                            "type":    "error",
-                            "message": "No speech detected. Please try again.",
-                        })
+                        if not terminal_sent:
+                            terminal_sent = True
+                            await owner.send_turn_error(
+                                turn_id,
+                                TurnErrorCode.FINAL_TRANSCRIPT_TIMEOUT,
+                                "No speech detected. Please try again.",
+                                retryable=True,
+                            )
+                        await _release_active_turn(turn_id)
 
-                    # ALWAYS send audio_end — this is what releases the browser
-                    # from the 'Processing...' state, regardless of whether
-                    # there was any speech or audio to play.
-                    await websocket.send_json({"type": "audio_end"})
-                    audio_end_sent = True
-
-        except WebSocketDisconnect:
-            pass  # Expected if user navigates away
+        except asyncio.CancelledError:
+            pass
         except Exception as exc:
-            print(f"[WS/ASR] Broadcaster error: {exc}")
-        finally:
-            if not audio_end_sent:
+            print(f"[WS/ASR] Transcript reader error: {exc}")
+            if active_turn_id and not terminal_sent:
+                terminal_sent = True
                 try:
-                    await websocket.send_json({
-                        "type":    "error",
-                        "message": "Audio dropped or no speech detected. Please try again.",
-                    })
+                    await owner.send_turn_error(
+                        active_turn_id,
+                        TurnErrorCode.UPSTREAM_RECONNECT_FAILED,
+                        f"Transcript stream error: {exc}",
+                        retryable=True,
+                    )
                 except Exception:
                     pass
+            if active_turn_id:
+                await _release_active_turn(active_turn_id)
 
-    broadcaster_task = asyncio.create_task(transcript_broadcaster())
+    reader_task = asyncio.create_task(
+        transcript_reader(),
+        name=f"transcript-reader:{session_id}:{speaker}",
+    )
 
+    # ── Main receive loop ─────────────────────────────────────────────────
     try:
         while True:
             msg = await websocket.receive()
@@ -1100,34 +1208,95 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
             if msg["type"] == "websocket.disconnect":
                 raise WebSocketDisconnect(msg.get("code", 1000))
 
-            # ── Binary frame: PCM audio chunk ─────────────────────────
-            if "bytes" in msg and msg["bytes"]:
-                await adapter.stream_chunk(msg["bytes"])
+            # Binary frame: PCM audio chunk
+            if msg.get("bytes"):
+                if active_turn_id is not None:
+                    await adapter.stream_chunk(msg["bytes"])
 
-            # ── Text frame: control message ───────────────────────────
-            elif "text" in msg and msg["text"]:
+            # Text frame: control message
+            elif msg.get("text"):
                 try:
                     ctrl = json.loads(msg["text"])
                 except json.JSONDecodeError:
                     continue
 
-                if ctrl.get("type") == "stop_recording":
-                    # Tell adapter to send speech_end so we eventually get transcript.final
-                    # The broadcaster_task will catch it and trigger NMT+TTS.
-                    await adapter.signal_speech_end()
+                msg_type = ctrl.get("type")
+
+                if msg_type == MSG_TURN_START:
+                    new_turn_id = ctrl.get("turn_id")
+                    if not new_turn_id:
+                        new_turn_id = str(uuid.uuid4())
+                        print(f"[WS/ASR] WARN: missing turn_id — generated {new_turn_id} (legacy client)")
+
+                    # The two speaker sockets may both be connected, but only
+                    # one may own an active conversation turn at a time.
+                    turn_acquired = await acquire_session_turn(
+                        session_id,
+                        speaker,
+                        new_turn_id,
+                        redis=_redis,
+                    )
+                    if not turn_acquired:
+                        await owner.send_turn_error(
+                            new_turn_id,
+                            TurnErrorCode.TURN_IN_PROGRESS,
+                            "The other speaker is currently using the microphone.",
+                            retryable=False,
+                        )
+                        continue
+
+                    async with turn_lock:
+                        if owner.active_turn_id is not None:
+                            await release_session_turn(
+                                session_id,
+                                speaker,
+                                new_turn_id,
+                                redis=_redis,
+                            )
+                            await owner.send_turn_error(
+                                new_turn_id,
+                                TurnErrorCode.TURN_IN_PROGRESS,
+                                "Another turn is already in progress.",
+                                retryable=False,
+                            )
+                            continue
+                        owner.active_turn_id = new_turn_id
+                        active_turn_id       = new_turn_id
+                        terminal_sent        = False
+                    print(f"[WS/ASR] Turn started: {new_turn_id}")
+
+                elif msg_type == MSG_STOP_RECORDING:
+                    tid = ctrl.get("turn_id") or active_turn_id
+                    if tid == active_turn_id and active_turn_id is not None:
+                        await adapter.signal_speech_end()
+                        print(f"[WS/ASR] stop_recording for turn={tid}")
 
     except WebSocketDisconnect:
-        # Browser disconnected — leave Saaras WS alive for quick reconnect.
-        # A reconnecting browser will reuse the same session_key.
-        print(f"[WS/ASR] Disconnected: {session_key} (Saaras WS kept alive)")
+        print(f"[WS/ASR] Browser disconnected: {session_id}:{speaker}")
+        if active_turn_id and not terminal_sent:
+            try:
+                await owner.send_turn_cancelled(active_turn_id, reason="browser_disconnected")
+            except Exception:
+                pass
     except Exception as exc:
-        print(f"[WS/ASR] Unexpected error ({session_key}): {exc}")
-        try:
-            await websocket.send_json({"type": "error", "message": str(exc)})
-        except Exception:
-            pass
+        print(f"[WS/ASR] Unexpected error {session_id}:{speaker}: {exc}")
+        if active_turn_id and not terminal_sent:
+            try:
+                await owner.send_turn_error(
+                    active_turn_id, TurnErrorCode.TURN_TOTAL_TIMEOUT, str(exc), retryable=True
+                )
+            except Exception:
+                pass
     finally:
-        broadcaster_task.cancel()
+        reader_task.cancel()
+        try:
+            await reader_task
+        except (asyncio.CancelledError, Exception):
+            pass
+        if active_turn_id:
+            await _release_active_turn(active_turn_id)
+        await owner.release()
+        print(f"[WS/ASR] Handler done: {session_id}:{speaker}")
 
 
 # ── Run ───────────────────────────────────────────────────────────────────────

@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Varta Main Branch Dataflow Manager</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0e1118;
+      --surface: #151b25;
+      --surface-2: #1a2230;
+      --surface-3: #222c3b;
+      --line: #354256;
+      --text: #f2f6fb;
+      --muted: #9aa8ba;
+      --blue: #78c8ff;
+      --blue-soft: rgba(120, 200, 255, .14);
+      --green: #73d39d;
+      --green-soft: rgba(115, 211, 157, .13);
+      --orange: #f3bb73;
+      --orange-soft: rgba(243, 187, 115, .14);
+      --purple: #c9a9ff;
+      --purple-soft: rgba(201, 169, 255, .13);
+      --red: #ff909e;
+      --red-soft: rgba(255, 144, 158, .14);
+      --shadow: 0 16px 36px rgba(0, 0, 0, .22);
+      --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); }
+    body { padding: 22px; }
+    button, select, input { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+    .shell { max-width: 1840px; margin: 0 auto; }
+    .topbar { display: flex; justify-content: space-between; gap: 22px; align-items: flex-start; margin-bottom: 16px; }
+    .eyebrow { color: var(--blue); text-transform: uppercase; letter-spacing: .14em; font-size: 11px; font-weight: 700; margin-bottom: 6px; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: clamp(24px, 3vw, 36px); line-height: 1.05; letter-spacing: -.035em; }
+    .subtitle { color: var(--muted); max-width: 850px; margin-top: 8px; font-size: 14px; line-height: 1.5; }
+    .branch-box { min-width: 280px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); box-shadow: var(--shadow); }
+    .branch-box strong { display: block; color: var(--green); font-size: 14px; }
+    .branch-box span { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .notice { margin-bottom: 14px; padding: 10px 13px; border-left: 3px solid var(--orange); background: var(--orange-soft); color: var(--text); font-size: 12px; line-height: 1.45; }
+    .notice code { color: var(--orange); }
+    .controls { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; padding: 12px 14px; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); box-shadow: var(--shadow); }
+    .control-group { display: flex; align-items: center; gap: 7px; }
+    .control-label { color: var(--muted); font-size: 12px; }
+    .control-button, .control-select, .search { min-height: 34px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); padding: 7px 10px; font-size: 12px; }
+    .control-button:hover, .control-select:hover, .search:hover { border-color: var(--blue); }
+    .control-button.primary { color: var(--blue); border-color: rgba(120, 200, 255, .45); background: var(--blue-soft); }
+    .search { min-width: 220px; }
+    .spacer { flex: 1; }
+    .status { color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; font-size: 11px; white-space: nowrap; }
+    .summary { display: grid; grid-template-columns: repeat(5, minmax(130px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .summary-item { padding: 11px 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+    .summary-label { color: var(--muted); font-size: 11px; }
+    .summary-value { margin-top: 3px; font-size: 18px; font-variant-numeric: tabular-nums; }
+    .blue { color: var(--blue); } .green { color: var(--green); } .orange { color: var(--orange); } .purple { color: var(--purple); }
+    .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 14px; align-items: start; }
+    .panel { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); overflow: hidden; }
+    .panel-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 14px 16px 12px; border-bottom: 1px solid var(--line); }
+    .panel-heading h2 { font-size: 14px; }
+    .panel-heading span { color: var(--muted); font-size: 11px; }
+    .flowboard { max-height: 790px; overflow: auto; }
+    .graph-inner { position: relative; min-width: 1580px; padding: 16px; }
+    .lanes { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(6, minmax(220px, 1fr)); gap: 12px; }
+    .lane-heading { display: flex; justify-content: space-between; gap: 8px; align-items: center; min-height: 45px; padding: 9px 11px; margin-bottom: 10px; border-bottom: 1px solid var(--line); color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-size: 10px; }
+    .lane-heading strong { color: var(--text); text-transform: none; letter-spacing: 0; font-size: 13px; }
+    .lane-heading span { text-transform: none; letter-spacing: 0; font-size: 10px; }
+    .lane-count { border: 1px solid var(--line); border-radius: 999px; padding: 2px 6px; font-size: 10px; }
+    .lane-nodes { display: grid; gap: 9px; }
+    .node { display: block; width: 100%; min-height: 154px; padding: 11px; text-align: left; border: 1px solid var(--line); border-left: 3px solid var(--blue); border-radius: 10px; background: var(--surface-2); transition: opacity .16s ease, border-color .16s ease, background .16s ease, transform .16s ease; }
+    .node:hover { border-color: var(--blue); background: var(--surface-3); transform: translateY(-1px); }
+    .node.selected { border-color: var(--blue); background: var(--blue-soft); box-shadow: 0 0 0 1px rgba(120, 200, 255, .16); }
+    .node.active { border-color: var(--green); background: var(--green-soft); box-shadow: 0 0 0 2px rgba(115, 211, 157, .15); }
+    .node.path-off { opacity: .2; }
+    .node.search-off { display: none; }
+    .node.pipeline { border-left-color: var(--orange); }
+    .node.provider { border-left-color: var(--orange); }
+    .node.storage { border-left-color: var(--purple); }
+    .node.test { border-left-color: var(--purple); }
+    .node.risk { border-left-color: var(--red); }
+    .node-kicker { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+    .node-title { margin-top: 6px; font-size: 13px; font-weight: 700; line-height: 1.25; }
+    .node-owner { margin-top: 4px; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+    .node-data { display: grid; gap: 3px; margin-top: 9px; color: var(--muted); font-size: 10px; line-height: 1.3; }
+    .node-data b { color: var(--text); font-weight: 600; }
+    .node-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 9px; }
+    .node-tag { padding: 3px 5px; border-radius: 4px; background: rgba(255, 255, 255, .05); color: var(--muted); font-size: 9px; }
+    #edgeLayer { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: visible; }
+    .edge { fill: none; stroke: #56657a; stroke-width: 1.35; opacity: .7; marker-end: url(#arrow); transition: opacity .16s ease, stroke .16s ease, stroke-width .16s ease; }
+    .edge.parallel-edge { stroke: var(--orange); stroke-dasharray: 4 3; opacity: .7; }
+    .edge.telemetry-edge { stroke: var(--purple); stroke-dasharray: 2 4; opacity: .55; }
+    .edge.risk-edge { stroke: var(--red); stroke-dasharray: 6 4; opacity: .65; }
+    .edge.edge-off { opacity: .08; }
+    .edge.edge-active { stroke: var(--green); stroke-width: 3; opacity: 1; marker-end: url(#activeArrow); }
+    .detail-panel { position: sticky; top: 14px; }
+    .detail-body { padding: 15px 16px; }
+    .detail-title { font-size: 20px; letter-spacing: -.02em; }
+    .detail-id { margin-top: 4px; color: var(--blue); font-size: 11px; }
+    .detail-kind { display: inline-block; margin-top: 9px; padding: 4px 7px; border-radius: 5px; background: var(--surface-3); color: var(--muted); font-size: 10px; }
+    .detail-grid { display: grid; gap: 10px; margin-top: 17px; }
+    .detail-row { padding-bottom: 9px; border-bottom: 1px solid rgba(53, 66, 86, .65); }
+    .detail-row:last-child { border-bottom: 0; }
+    .detail-label { color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-size: 10px; }
+    .detail-value { margin-top: 3px; font-size: 12px; line-height: 1.45; }
+    code { color: var(--blue); font-family: "SFMono-Regular", Consolas, monospace; font-size: .92em; }
+    .token-section { padding: 14px 16px 16px; border-top: 1px solid var(--line); }
+    .token-section h3 { color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-size: 11px; }
+    .token-list { display: grid; gap: 8px; margin-top: 10px; }
+    .token { display: grid; grid-template-columns: 135px 1fr; gap: 8px; font-size: 11px; }
+    .token span { color: var(--muted); line-height: 1.35; }
+    .bottom-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, .8fr); gap: 14px; margin-top: 14px; }
+    .event-feed { max-height: 280px; overflow: auto; padding: 7px 16px 12px; }
+    .event { display: grid; grid-template-columns: 70px 155px 1fr; gap: 9px; padding: 7px 0; border-bottom: 1px solid rgba(53, 66, 86, .55); font-size: 11px; }
+    .event:last-child { border-bottom: 0; }
+    .event-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .event-name { color: var(--blue); }
+    .event-detail { color: var(--muted); line-height: 1.35; }
+    .event.risk-event .event-name { color: var(--red); }
+    .legend { display: grid; gap: 9px; padding: 14px 16px 16px; }
+    .legend-row { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 11px; }
+    .legend-line { width: 28px; border-top: 2px solid #56657a; }
+    .legend-line.parallel { border-top-style: dashed; border-top-color: var(--orange); }
+    .legend-line.telemetry { border-top-style: dotted; border-top-color: var(--purple); }
+    .legend-line.risk { border-top-style: dashed; border-top-color: var(--red); }
+    .legend-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); }
+    .note { margin-top: 10px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .links { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 11px; }
+    .links a { color: var(--blue); font-size: 11px; }
+    @media (max-width: 1080px) { .topbar { display: block; } .branch-box { margin-top: 14px; } .workspace { grid-template-columns: 1fr; } .detail-panel { position: static; } }
+    @media (max-width: 640px) { body { padding: 13px; } .summary { grid-template-columns: repeat(2, 1fr); } .spacer { display: none; } .search { width: 100%; min-width: 0; } .bottom-grid { grid-template-columns: 1fr; } .event { grid-template-columns: 58px 1fr; } .event-detail { grid-column: 2; } }
+  </style>
+</head>
+<body>
+  <main class="shell" id="mainDataflowManager">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">Varta repository flow</div>
+        <h1>Main branch dataflow manager</h1>
+        <p class="subtitle">This chart is derived from the GitHub <code>main</code> branch. Select a node to inspect the actual data contract, run a branch-specific scenario, and see where session state, language detection, audio, buffering, and observability move through the current PoC.</p>
+      </div>
+      <div class="branch-box" aria-label="Source revision">
+        <strong>main branch</strong>
+        <span>Repository: alfa-adi/varta.ai</span>
+        <span>Revision: 3570d4e4aab8</span>
+        <span>Architecture: REST plus MediaRecorder</span>
+      </div>
+    </header>
+
+    <div class="notice"><strong>Important main-branch distinction:</strong> the current branch does not contain a live browser WebSocket endpoint, AudioWorklet, or <code>frontend/src</code> tree. The browser records <code>audio/webm</code> with <code>MediaRecorder</code> and posts it to REST endpoints; this manager preserves that actual flow.</div>
+
+    <section class="controls" aria-label="Flow controls">
+      <div class="control-group"><span class="control-label">Scenario</span><select class="control-select" id="scenarioSelect"><option value="speakerA">Speaker A turn</option><option value="speakerAFirst">Speaker A first and deferred</option><option value="speakerBFirst">Speaker B first and deferred</option><option value="dual">Dual simultaneous request</option><option value="single">Single stateless request</option><option value="failure">Provider or server failure</option><option value="tests">Existing test coverage</option></select></div>
+      <button class="control-button primary" id="runButton" type="button">Run scenario</button>
+      <button class="control-button" id="stepButton" type="button">Step</button>
+      <button class="control-button" id="pauseButton" type="button">Pause</button>
+      <button class="control-button" id="resetButton" type="button">Reset</button>
+      <div class="control-group"><span class="control-label">Show</span><select class="control-select" id="viewSelect"><option value="all">All nodes</option><option value="main">Main request path</option><option value="risk">Risks and fallbacks</option><option value="test">Tests and evidence</option></select></div>
+      <input class="search" id="searchInput" type="search" placeholder="Find endpoint, file, or data" aria-label="Find endpoint, file, or data">
+      <div class="spacer"></div><span class="status" id="runStatus" aria-live="polite">Ready</span>
+    </section>
+
+    <section class="summary" aria-label="Flow summary">
+      <div class="summary-item"><div class="summary-label">Visible nodes</div><div class="summary-value blue" id="visibleCount">0</div></div>
+      <div class="summary-item"><div class="summary-label">Active node</div><div class="summary-value green" id="activeNode">None</div></div>
+      <div class="summary-item"><div class="summary-label">Flow events</div><div class="summary-value orange" id="eventCount">0</div></div>
+      <div class="summary-item"><div class="summary-label">Session storage</div><div class="summary-value purple" id="storageStatus">Redis or memory</div></div>
+      <div class="summary-item"><div class="summary-label">Current transport</div><div class="summary-value">REST</div></div>
+    </section>
+
+    <section class="workspace">
+      <div class="panel">
+        <div class="panel-heading"><h2>Main branch flow lanes</h2><span>Solid request · dashed parallel/deferred · dotted telemetry · red risk</span></div>
+        <div class="flowboard" id="flowboard">
+          <div class="graph-inner" id="graphInner">
+            <svg id="edgeLayer" role="img" aria-label="Main branch dataflow connections">
+              <defs>
+                <marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L7,3.5 L0,7 z" fill="#56657a"></path></marker>
+                <marker id="activeArrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L7,3.5 L0,7 z" fill="#73d39d"></path></marker>
+              </defs>
+              <g id="edgeGroup"></g>
+            </svg>
+            <div class="lanes" id="lanes"></div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="panel detail-panel" aria-live="polite">
+        <div class="panel-heading"><h2>Selected node data</h2><span id="detailPosition">1 of 1</span></div>
+        <div class="detail-body" id="detailBody"></div>
+        <div class="token-section"><h3>Main branch data tokens</h3><div class="token-list" id="tokenList"></div></div>
+      </aside>
+    </section>
+
+    <section class="bottom-grid">
+      <div class="panel"><div class="panel-heading"><h2>Data movement log</h2><span id="logHint">Select a scenario and run it</span></div><div class="event-feed" id="eventFeed" aria-live="polite"></div></div>
+      <div class="panel"><div class="panel-heading"><h2>How to read this flow</h2><span>Current branch evidence</span></div><div class="legend">
+        <div class="legend-row"><i class="legend-line"></i> Sequential request or response</div>
+        <div class="legend-row"><i class="legend-line parallel"></i> Parallel dual path or deferred result</div>
+        <div class="legend-row"><i class="legend-line telemetry"></i> Logging and test evidence</div>
+        <div class="legend-row"><i class="legend-line risk"></i> Risk, fallback, or known limitation</div>
+        <div class="legend-row"><i class="legend-dot"></i> Currently active node</div>
+        <p class="note">The main branch is a REST PoC: the browser receives a complete base64 audio response, then creates an HTML audio element using an MP3 data URL. It does not stream PCM chunks to a live WebSocket player.</p>
+        <div class="links"><a href="https://github.com/alfa-adi/varta.ai/tree/main" target="_blank" rel="noreferrer">Open main branch</a><a href="https://github.com/alfa-adi/varta.ai/blob/main/web/server.py" target="_blank" rel="noreferrer">web/server.py</a><a href="https://github.com/alfa-adi/varta.ai/blob/main/pipeline/dual.py" target="_blank" rel="noreferrer">pipeline/dual.py</a><a href="https://github.com/alfa-adi/varta.ai/blob/main/web/static/index.html" target="_blank" rel="noreferrer">web/static/index.html</a></div>
+      </div></div>
+    </section>
+  </main>
+
+  <script>
+    const lanes = [
+      { id: "browser", label: "Browser UI", subtitle: "static page and media" },
+      { id: "server", label: "FastAPI REST", subtitle: "routes and assembly" },
+      { id: "pipeline", label: "Dual pipeline", subtitle: "state and cross wiring" },
+      { id: "provider", label: "Sarvam REST", subtitle: "ASR NMT TTS" },
+      { id: "storage", label: "Storage and logs", subtitle: "Redis memory Mongo" },
+      { id: "test", label: "Tests and risks", subtitle: "evidence and gaps" }
+    ];
+
+    const nodes = [
+      { id: "B0", lane: "browser", title: "Static UI load", kind: "browser", owner: "web/static/index.html", input: "GET /", output: "Two speaker panels and controls", state: "PAGE_LOAD to READY", ids: "browser_context", failure: "Static file missing or page error", metrics: "page_load and console errors", contract: "The current UI is a static HTML document with inline CSS and JavaScript.", next: "B1" },
+      { id: "B1", lane: "browser", title: "Automatic session creation", kind: "browser", owner: "ensureSession in index.html", input: "First record press", output: "POST /session/create with lang_a and lang_b empty", state: "NO_SESSION to SESSION_READY", ids: "session_id", failure: "Fetch failure blocks the recording action", metrics: "session_create_latency", contract: "The UI sends empty language fields so ASR can auto-detect.", next: "S0" },
+      { id: "B2", lane: "browser", title: "Microphone recording", kind: "browser", owner: "toggleRecord in index.html", input: "getUserMedia audio track", output: "MediaRecorder audio/webm blob", state: "IDLE to RECORDING", ids: "speaker and isRecording", failure: "Permission denied or unsupported MediaRecorder", metrics: "recording_duration and chunk_count", contract: "The browser records locally; it does not send live audio frames.", next: "B3" },
+      { id: "B3", lane: "browser", title: "REST audio upload", kind: "browser", owner: "sendAudio in index.html", input: "audio/webm Blob and session_id", output: "Multipart POST to speaker endpoint", state: "RECORDING to TRANSLATING", ids: "session_id and speaker", failure: "HTTP error shown in error bar", metrics: "upload_latency and response_latency", contract: "Speaker A posts to /translate/speaker_a; Speaker B posts to /translate/speaker_b.", next: "S1" },
+      { id: "B4", lane: "browser", title: "Source transcript bubble", kind: "browser", owner: "addBubble in index.html", input: "transcript, src_language, latency", output: "Original text in input speaker panel", state: "TRANSLATING to SOURCE_SHOWN", ids: "speaker and src_language", failure: "Missing text renders an em dash", metrics: "bubble_created", contract: "Detected language updates the input speaker header.", next: "B5" },
+      { id: "B5", lane: "browser", title: "Translated audio bubble", kind: "browser", owner: "addBubble in index.html", input: "translation, tgt_language, audio_b64", output: "HTML audio element in other panel", state: "SOURCE_SHOWN to OUTPUT_READY", ids: "otherSpeaker and audio_b64", failure: "Audio format mismatch or missing base64", metrics: "audio_element_created", contract: "The UI hardcodes a data:audio/mp3;base64 URL.", next: "B4 or T3" },
+      { id: "S0", lane: "server", title: "Create session route", kind: "server", owner: "web/server.py /session/create", input: "lang_a and lang_b form fields", output: "UUID plus initial session state", state: "REQUEST to SESSION_CREATED", ids: "session_id", failure: "Storage failure may surface during setup", metrics: "session_created", contract: "Empty strings become None; state begins with unknown languages.", next: "D0" },
+      { id: "S1", lane: "server", title: "Speaker REST route", kind: "server", owner: "web/server.py /translate/speaker_a or b", input: "UploadFile audio and session_id", output: "Audio bytes and file extension", state: "REQUEST to PROCESSING", ids: "session_id and speaker", failure: "Exception becomes HTTP 500 detail", metrics: "route_latency and status_code", contract: "The server reads the complete upload before invoking the pipeline.", next: "P0" },
+      { id: "S2", lane: "server", title: "Response assembly", kind: "server", owner: "web/server.py", input: "SpeakerResult or buffered result", output: "JSON transcript, translation, languages, audio_b64, latency", state: "RESULT to RESPONSE", ids: "session_id and speaker", failure: "None result can cause route error", metrics: "response_bytes and total_latency_ms", contract: "Deferred results may be nested under a deferred field.", next: "B4" },
+      { id: "S3", lane: "server", title: "Dual REST route", kind: "server", owner: "web/server.py /translate/dual", input: "audio_a, audio_b, session_id", output: "for_speaker_a and for_speaker_b JSON", state: "REQUEST to DUAL_RESPONSE", ids: "session_id", failure: "Any gathered provider exception becomes HTTP 500", metrics: "dual_latency and response_size", contract: "Both clips are uploaded together and both directions are returned together.", next: "B5" },
+      { id: "S4", lane: "server", title: "Single REST route", kind: "server", owner: "web/server.py /translate/single", input: "audio, src_language, tgt_language", output: "One JSON result", state: "REQUEST to SINGLE_RESPONSE", ids: "stateless_request", failure: "Provider exception becomes HTTP 500", metrics: "single_latency", contract: "No session is required for the one-way path.", next: "B5" },
+      { id: "P0", lane: "pipeline", title: "Get or rebuild DualPipeline", kind: "pipeline", owner: "_get_or_create_session", input: "session_id", output: "DualPipeline with SessionState", state: "NO_PIPELINE to PIPELINE_READY", ids: "session_id", failure: "Expired or missing session starts a new state path", metrics: "pipeline_rebuilt", contract: "The pipeline object is rebuilt from persisted state on each REST request.", next: "P1" },
+      { id: "P1", lane: "pipeline", title: "Speaker A processing", kind: "pipeline", owner: "DualPipeline.process_speaker_a", input: "Audio bytes and audio_format", output: "SpeakerResult", state: "AUDIO to ASR_RESULT", ids: "lang_a, lang_b, pending_a, pending_b", failure: "ASR, NMT, or TTS exception propagates", metrics: "a_pipeline_latency", contract: "A detects lang_a; if lang_b is unknown, A transcript is buffered.", next: "A0" },
+      { id: "P2", lane: "pipeline", title: "Speaker B processing", kind: "pipeline", owner: "DualPipeline.process_speaker_b", input: "Audio bytes and audio_format", output: "SpeakerResult", state: "AUDIO to ASR_RESULT", ids: "lang_a, lang_b, pending_a, pending_b", failure: "ASR, NMT, or TTS exception propagates", metrics: "b_pipeline_latency", contract: "B detects lang_b; if lang_a is unknown, B transcript is buffered.", next: "A0" },
+      { id: "P3", lane: "pipeline", title: "Cross-language state", kind: "pipeline", owner: "SessionState", input: "ASR detected_language values", output: "lang_a and lang_b", state: "UNKNOWN to KNOWN", ids: "lang_a and lang_b", failure: "Wrong or unknown code routes the next translation incorrectly", metrics: "language_detection_updates", contract: "Detected source language becomes the other speaker's NMT target.", next: "P4" },
+      { id: "P4", lane: "pipeline", title: "Buffer and defer", kind: "pipeline", owner: "DualPipeline pending transcripts", input: "Transcript when other language is None", output: "buffered response or deferred result", state: "PENDING to RESOLVED", ids: "pending_transcript_a or b", failure: "Only one pending transcript slot exists per speaker", metrics: "buffered_count and deferred_count", contract: "When the other speaker later establishes a language, NMT and TTS process the pending transcript.", next: "S2" },
+      { id: "P5", lane: "pipeline", title: "Parallel dual orchestration", kind: "pipeline", owner: "DualPipeline.process_both", input: "Both speaker audio clips", output: "Two directional PipelineResults", state: "DUAL_REQUEST to DUAL_RESULT", ids: "lang_a and lang_b", failure: "asyncio.gather fails the whole request if one branch raises", metrics: "max_layer_latency", contract: "ASR runs in parallel, then NMT in parallel, then TTS in parallel.", next: "S3" },
+      { id: "P6", lane: "pipeline", title: "Single pipeline sequence", kind: "pipeline", owner: "SinglePipeline.run", input: "One audio clip plus source and target", output: "PipelineResult", state: "ASR to NMT to TTS", ids: "src_language and tgt_language", failure: "Any adapter exception stops the sequence", metrics: "total_latency_ms", contract: "The single path is sequential and uses injected adapter interfaces.", next: "S4" },
+      { id: "A0", lane: "provider", title: "Sarvam ASR REST", kind: "provider", owner: "adapter/sarvam_asr.py", input: "Multipart file, model saaras:v3, optional language hint", output: "transcript, language_code, confidence", state: "UPLOAD to ASR_OUTPUT", ids: "detected_language and latency_ms", failure: "HTTP error raises immediately", metrics: "asr_latency_ms", contract: "POST /speech-to-text with api-subscription-key; language hint omitted for auto-detect.", next: "P3" },
+      { id: "N0", lane: "provider", title: "Sarvam NMT REST", kind: "provider", owner: "adapter/sarvam_nmt.py", input: "input, source_language_code, target_language_code", output: "translated_text", state: "TEXT to TRANSLATED_TEXT", ids: "src_language and tgt_language", failure: "HTTP status 400 or above becomes RuntimeError", metrics: "nmt_latency_ms", contract: "POST /translate with sarvam-translate:v1 and preprocessing enabled.", next: "T0" },
+      { id: "T0", lane: "provider", title: "Sarvam TTS REST", kind: "provider", owner: "adapter/sarvam_tts.py", input: "text, target_language_code, speaker, pace, sample rate", output: "Base64 audio decoded to bytes", state: "TEXT to AUDIO_BYTES", ids: "language and model_id", failure: "Unsupported Bulbul language or HTTP error", metrics: "tts_latency_ms and audio_bytes", contract: "POST /text-to-speech with bulbul:v3; current code requests MP3 using TTSInput defaults.", next: "S2" },
+      { id: "D0", lane: "storage", title: "Session persistence decision", kind: "storage", owner: "web/server.py save_session and load_session", input: "SessionState JSON", output: "Redis key or local dict", state: "SESSION_CREATED to STORED", ids: "session_id", failure: "Redis unavailable falls back to worker-local memory", metrics: "redis_connected and storage_mode", contract: "REDIS_URL enables synchronous Redis setex/get; otherwise _local_sessions is used.", next: "P0" },
+      { id: "D1", lane: "storage", title: "Redis session record", kind: "storage", owner: "Upstash Redis client", input: "lang_a, lang_b, pending transcripts", output: "TTL record for later request", state: "STORED to LOADED", ids: "session:{session_id}", failure: "Two workers are consistent only when Redis is reachable", metrics: "session_ttl and redis_ping", contract: "SESSION_TTL is two hours and the pipeline object itself is never serialized.", next: "P0" },
+      { id: "D2", lane: "storage", title: "Mongo translation log", kind: "storage", owner: "log_translation", input: "session, endpoint, languages, latency, char_count", output: "translation_logs document", state: "RESULT to LOGGED", ids: "session_id and timestamp", failure: "Mongo failure is swallowed and does not affect response", metrics: "mongo_enabled and log_attempts", contract: "Logging is optional and not part of the user-visible success response.", next: "T3" },
+      { id: "X0", lane: "test", title: "Browser test surface", kind: "test", owner: "README Playwright benchmark scope", input: "Static page and MediaRecorder interaction", output: "REST request and response evidence", state: "PAGE to REQUEST", ids: "browser_context and session_id", failure: "No committed browser-streaming gate is present on main", metrics: "browser_benchmark_gap", contract: "Main documents browser benchmarking, but the committed tests below exercise adapters or REST calls directly.", next: "B0 and T3" },
+      { id: "T1", lane: "test", title: "ASR smoke test", kind: "test", owner: "tests/test_asr.py", input: "Local WAV fixture and SARVAM_API_KEY", output: "ASROutput assertions", state: "FIXTURE to PROVIDER_RESULT", ids: "detected_language and confidence", failure: "Requires real key and fixture path", metrics: "printed latency", contract: "Calls the REST ASR adapter directly; it is not a browser streaming test.", next: "T3" },
+      { id: "T2", lane: "test", title: "Buffering API test", kind: "test", owner: "tests/test_buffering_api.py", input: "requests plus WAV fixture", output: "buffered and deferred assertions", state: "HTTP to ASSERTIONS", ids: "session_id and speaker", failure: "Requires running local server", metrics: "pass or fail output", contract: "Tests speaker A/B REST endpoints directly without a browser or microphone.", next: "T3" },
+      { id: "T3", lane: "test", title: "Evidence boundary", kind: "test", owner: "Main branch test surface", input: "Provider and endpoint outputs", output: "Historical pipeline evidence", state: "OBSERVE to CLASSIFY", ids: "latency_ms and status", failure: "Cannot prove browser WebSocket lifecycle", metrics: "pipeline_endpoint_smoke", contract: "The current tests do not measure live browser socket ownership, AudioWorklet conversion, or Web Audio playback.", next: "Decision" },
+      { id: "R0", lane: "test", title: "No live WebSocket route", kind: "risk", owner: "Main branch architecture", input: "User expectation of realtime flow", output: "REST turn boundary", state: "EXPECTED to GAP", ids: "none", failure: "Cannot validate open, reuse, close, or reconnect behavior", metrics: "websocket_route_absent", contract: "No /ws route appears in web/server.py and no frontend WebSocket client exists.", next: "Decision" },
+      { id: "R1", lane: "test", title: "Audio format split", kind: "risk", owner: "pipeline/types.py and static UI", input: "MediaRecorder webm and TTS MP3", output: "HTML audio data URL", state: "BROWSER_MEDIA to BASE64_MP3", ids: "audio_format", failure: "No explicit streamed PCM rate contract", metrics: "format_mismatch_risk", contract: "The main branch does not have the later linear16 16 kHz input or 24 kHz output contract.", next: "Decision" },
+      { id: "R2", lane: "test", title: "Worker fallback risk", kind: "risk", owner: "Procfile and server storage", input: "Two Gunicorn workers plus empty REDIS_URL", output: "Separate local session dictionaries", state: "WORKER_A to WORKER_B", ids: "session_id", failure: "Session state may not be visible across workers", metrics: "storage_mode and worker_id", contract: "Procfile uses two workers while the code permits in-memory fallback.", next: "Decision" }
+    ];
+
+    const edges = [
+      ["B0", "B1", "normal"], ["B1", "S0", "normal"], ["S0", "D0", "normal"], ["D0", "D1", "normal"], ["D0", "P0", "normal"], ["B2", "B3", "normal"], ["B3", "S1", "normal"], ["S1", "P0", "normal"], ["P0", "P1", "normal"], ["P0", "P2", "normal"], ["P1", "A0", "normal"], ["P2", "A0", "normal"], ["A0", "P3", "normal"], ["P3", "P4", "normal"], ["P3", "N0", "normal"], ["N0", "T0", "normal"], ["T0", "S2", "normal"], ["P4", "S2", "deferred"], ["S2", "B4", "normal"], ["S2", "B5", "normal"], ["B4", "B5", "normal"], ["B5", "B2", "normal"],
+      ["B0", "S4", "normal"], ["S4", "P6", "normal"], ["P6", "A0", "parallel"], ["P6", "N0", "parallel"], ["P6", "T0", "parallel"], ["S4", "B5", "normal"],
+      ["B3", "S3", "parallel"], ["S3", "P5", "parallel"], ["P5", "A0", "parallel"], ["P5", "N0", "parallel"], ["P5", "T0", "parallel"], ["S3", "B5", "normal"],
+      ["S2", "D2", "telemetry"], ["A0", "T1", "telemetry"], ["S1", "T2", "telemetry"], ["S2", "T2", "telemetry"], ["D2", "T3", "telemetry"], ["X0", "T3", "telemetry"], ["T1", "T3", "telemetry"], ["T2", "T3", "telemetry"], ["R0", "T3", "risk"], ["R1", "T3", "risk"], ["R2", "T3", "risk"]
+    ];
+
+    const tokens = [
+      ["session_id", "Created at B1 or S0; keys storage, pipeline rebuilds, REST calls, and logs."],
+      ["lang_a", "Speaker A source language; initialized from the form or updated by ASR detection."],
+      ["lang_b", "Speaker B source language; needed before the other speaker can be translated."],
+      ["pending_transcript_a", "Speaker A transcript held when B language is unknown."],
+      ["pending_transcript_b", "Speaker B transcript held when A language is unknown."],
+      ["audio_format", "Input filename extension, usually webm from MediaRecorder or wav from tests."],
+      ["transcript", "ASR text passed into NMT as source content."],
+      ["src_language", "Detected source language used by the NMT request."],
+      ["tgt_language", "Other speaker language used by NMT and TTS."],
+      ["audio_b64", "Complete base64 encoded TTS audio returned in JSON and inserted into an HTML audio element."],
+      ["latency_ms", "Adapter or pipeline wall-clock measurement; not browser WebSocket timing."],
+      ["storage_mode", "Redis when configured and reachable; otherwise process-local in-memory fallback."],
+      ["worker_id", "Not explicitly carried by the current response; useful evidence for the two-worker fallback risk."]
+    ];
+
+    const scenarios = {
+      speakerA: { label: "Speaker A turn", path: ["X0", "B0", "B1", "S0", "D0", "D1", "B2", "B3", "S1", "P0", "P1", "A0", "P3", "N0", "T0", "S2", "B4", "B5"], terminal: "complete JSON response", event: "HTML audio element created" },
+      speakerAFirst: { label: "Speaker A first and deferred", path: ["B1", "S0", "D0", "B2", "B3", "S1", "P0", "P1", "A0", "P3", "P4", "S2", "B4", "B1", "B2", "B3", "S1", "P0", "P2", "A0", "P3", "N0", "T0", "P4", "S2", "B4", "B5"], terminal: "buffered then deferred", event: "pending_transcript_a resolved" },
+      speakerBFirst: { label: "Speaker B first and deferred", path: ["B1", "S0", "D0", "B2", "B3", "S1", "P0", "P2", "A0", "P3", "P4", "S2", "B4", "B1", "B2", "B3", "S1", "P0", "P1", "A0", "P3", "N0", "T0", "P4", "S2", "B4", "B5"], terminal: "buffered then deferred", event: "pending_transcript_b resolved" },
+      dual: { label: "Dual simultaneous request", path: ["B0", "B1", "S0", "D0", "B2", "B3", "S3", "P5", "A0", "N0", "T0", "S3", "B5"], terminal: "for_speaker_a and for_speaker_b", event: "parallel ASR then NMT then TTS" },
+      single: { label: "Single stateless request", path: ["B0", "S4", "P6", "A0", "N0", "T0", "S4", "B5"], terminal: "one JSON result", event: "no session state" },
+      failure: { label: "Provider or server failure", path: ["B2", "B3", "S1", "P0", "P1", "A0", "R1", "T3"], terminal: "HTTP 500 or invalid output", event: "exception propagates to route" },
+      tests: { label: "Existing test coverage", path: ["X0", "A0", "T1", "T2", "D2", "T3", "R0", "R1", "R2"], terminal: "pipeline evidence only", event: "not browser WebSocket validation" }
+    };
+
+    const nodeById = Object.fromEntries(nodes.map(node => [node.id, node]));
+    const state = { selected: "B0", scenario: "speakerA", view: "all", query: "", step: -1, timer: null, playing: false, events: [] };
+    const $ = id => document.getElementById(id);
+
+    function createNode(node) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `node ${node.kind}`;
+      button.dataset.id = node.id;
+      button.setAttribute("aria-label", `${node.id} ${node.title}`);
+      button.innerHTML = `<div class="node-kicker"><span>${node.id}</span><span>${node.state.split(" ")[0]}</span></div><div class="node-title">${node.title}</div><div class="node-owner">${node.owner || "Flow coordinator"}</div><div class="node-data"><div>In: <b>${node.input}</b></div><div>Out: <b>${node.output}</b></div></div><div class="node-tags"><span class="node-tag">${node.ids}</span><span class="node-tag">${node.metrics.split(" and ")[0]}</span></div>`;
+      button.addEventListener("click", () => selectNode(node.id));
+      return button;
+    }
+
+    function renderLanes() {
+      const root = $("lanes");
+      root.innerHTML = "";
+      lanes.forEach(lane => {
+        const section = document.createElement("section");
+        section.className = "lane";
+        const laneNodes = nodes.filter(node => node.lane === lane.id);
+        section.innerHTML = `<div class="lane-heading"><div><strong>${lane.label}</strong><br><span>${lane.subtitle}</span></div><span class="lane-count">${laneNodes.length}</span></div>`;
+        const stack = document.createElement("div");
+        stack.className = "lane-nodes";
+        laneNodes.forEach(node => stack.appendChild(createNode(node)));
+        section.appendChild(stack);
+        root.appendChild(section);
+      });
+      requestAnimationFrame(() => { drawEdges(); applyView(); });
+    }
+
+    function drawEdges() {
+      const inner = $("graphInner");
+      const layer = $("edgeLayer");
+      const group = $("edgeGroup");
+      const width = Math.max(inner.scrollWidth, inner.clientWidth);
+      const height = Math.max(inner.scrollHeight, inner.clientHeight);
+      layer.setAttribute("width", width); layer.setAttribute("height", height); layer.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      group.innerHTML = "";
+      edges.forEach(([from, to, type]) => {
+        const source = document.querySelector(`.node[data-id="${from}"]`);
+        const target = document.querySelector(`.node[data-id="${to}"]`);
+        if (!source || !target) return;
+        const a = source.getBoundingClientRect(), b = target.getBoundingClientRect(), r = inner.getBoundingClientRect();
+        const sameColumn = Math.abs((a.left + a.width / 2) - (b.left + b.width / 2)) < 90;
+        let d;
+        if (sameColumn && b.top > a.bottom - 12) {
+          const x1 = a.left + a.width / 2 - r.left, y1 = a.bottom - r.top, x2 = b.left + b.width / 2 - r.left, y2 = b.top - r.top, mid = (y1 + y2) / 2;
+          d = `M ${x1} ${y1} C ${x1} ${mid} ${x2} ${mid} ${x2} ${y2}`;
+        } else {
+          const forward = b.left >= a.right - 24;
+          const x1 = (forward ? a.right : a.left) - r.left, y1 = a.top + a.height / 2 - r.top, x2 = (forward ? b.left : b.right) - r.left, y2 = b.top + b.height / 2 - r.top, bend = Math.max(32, Math.abs(x2 - x1) * .42);
+          d = forward ? `M ${x1} ${y1} C ${x1 + bend} ${y1} ${x2 - bend} ${y2} ${x2} ${y2}` : `M ${x1} ${y1} C ${x1 + bend} ${y1} ${x2 + bend} ${y2} ${x2} ${y2}`;
+        }
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", d); path.dataset.from = from; path.dataset.to = to; path.dataset.type = type;
+        path.classList.add("edge", type === "risk" ? "risk-edge" : type === "telemetry" ? "telemetry-edge" : type === "parallel" || type === "deferred" ? "parallel-edge" : "normal-edge");
+        path.setAttribute("marker-end", "url(#arrow)"); group.appendChild(path);
+      });
+      applyActiveEdges();
+    }
+
+    function pathMatches(node) {
+      if (state.view === "all") return true;
+      if (state.view === "main") return node.kind !== "risk" && node.kind !== "test";
+      if (state.view === "risk") return node.kind === "risk" || node.kind === "storage";
+      if (state.view === "test") return node.kind === "test";
+      return true;
+    }
+
+    function applyView() {
+      const path = new Set(scenarios[state.scenario].path);
+      const q = state.query.trim().toLowerCase();
+      let visible = 0;
+      document.querySelectorAll(".node").forEach(button => {
+        const node = nodeById[button.dataset.id];
+        const searchable = `${node.id} ${node.title} ${node.owner} ${node.input} ${node.output} ${node.ids} ${node.metrics} ${node.contract}`.toLowerCase();
+        const visibleByMode = pathMatches(node) && (!q || searchable.includes(q));
+        button.classList.toggle("search-off", !visibleByMode);
+        button.classList.toggle("path-off", state.view === "main" && !path.has(node.id));
+        button.classList.toggle("selected", node.id === state.selected);
+        button.classList.toggle("active", state.step >= 0 && path.has(node.id) && scenarios[state.scenario].path.indexOf(node.id) <= state.step);
+        if (visibleByMode) visible += 1;
+      });
+      $("visibleCount").textContent = visible;
+      $("activeNode").textContent = state.step >= 0 ? scenarios[state.scenario].path[state.step] : "None";
+      $("storageStatus").textContent = state.step >= 0 && scenarios[state.scenario].path.includes("D1") ? "Redis path" : "Redis or memory";
+      applyActiveEdges();
+    }
+
+    function applyActiveEdges() {
+      const active = new Set(state.step >= 0 ? scenarios[state.scenario].path.slice(0, state.step + 1) : []);
+      document.querySelectorAll(".edge").forEach(edge => {
+        const isActive = active.has(edge.dataset.from) && active.has(edge.dataset.to);
+        edge.classList.toggle("edge-active", isActive);
+        const type = edge.dataset.type;
+        edge.classList.toggle("edge-off", state.view === "test" && type !== "telemetry" && type !== "risk" || state.view === "risk" && type !== "risk" && nodeById[edge.dataset.from]?.kind !== "storage" && nodeById[edge.dataset.to]?.kind !== "storage");
+      });
+    }
+
+    function selectNode(id) {
+      state.selected = id; renderDetails(); applyView();
+      document.querySelector(`.node[data-id="${id}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+
+    function renderDetails() {
+      const node = nodeById[state.selected] || nodes[0];
+      $("detailBody").innerHTML = `<div class="detail-title">${node.title}</div><div class="detail-id">${node.id} · ${node.owner || "Flow coordinator"}</div><div class="detail-kind">${node.kind}</div><div class="detail-grid"><div class="detail-row"><div class="detail-label">Input</div><div class="detail-value">${node.input}</div></div><div class="detail-row"><div class="detail-label">Output</div><div class="detail-value">${node.output}</div></div><div class="detail-row"><div class="detail-label">State transition</div><div class="detail-value"><code>${node.state}</code></div></div><div class="detail-row"><div class="detail-label">Identifiers</div><div class="detail-value"><code>${node.ids}</code></div></div><div class="detail-row"><div class="detail-label">Failure behavior</div><div class="detail-value">${node.failure}</div></div><div class="detail-row"><div class="detail-label">Metrics and evidence</div><div class="detail-value">${node.metrics}</div></div><div class="detail-row"><div class="detail-label">Main branch contract</div><div class="detail-value">${node.contract}</div></div><div class="detail-row"><div class="detail-label">Next flow</div><div class="detail-value">${node.next}</div></div></div>`;
+      const visibleNodes = nodes.filter(pathMatches);
+      const position = visibleNodes.findIndex(item => item.id === node.id) + 1;
+      $("detailPosition").textContent = `${Math.max(1, position)} of ${visibleNodes.length}`;
+    }
+
+    function renderTokens() { $("tokenList").innerHTML = tokens.map(([name, detail]) => `<div class="token"><code>${name}</code><span>${detail}</span></div>`).join(""); }
+
+    function addEvent(id, index, scenario) {
+      const node = nodeById[id], terminal = index === scenario.path.length - 1, risk = node.kind === "risk" || scenario === scenarios.failure && id === "R1";
+      const timestamp = `${String(index + 1).padStart(2, "0")}.${String((index * 23) % 1000).padStart(3, "0")}`;
+      const detail = terminal ? `${scenario.terminal}; ${scenario.event}` : `${node.output}; state ${node.state}`;
+      state.events.unshift({ timestamp, name: terminal ? scenario.terminal : node.title, detail, risk }); state.events = state.events.slice(0, 30);
+      $("eventFeed").innerHTML = state.events.map(event => `<div class="event ${event.risk ? "risk-event" : ""}"><span class="event-time">${event.timestamp}</span><span class="event-name">${event.name}</span><span class="event-detail">${event.detail}</span></div>`).join("");
+      $("eventCount").textContent = state.events.length; $("logHint").textContent = `${scenario.label} · ${state.step + 1} of ${scenario.path.length} nodes`;
+    }
+
+    function stopPlayback() { if (state.timer) clearInterval(state.timer); state.timer = null; state.playing = false; $("pauseButton").textContent = "Play"; }
+    function advance() {
+      const scenario = scenarios[state.scenario];
+      if (state.step >= scenario.path.length - 1) { stopPlayback(); $("runStatus").textContent = `Complete · ${scenario.terminal}`; return; }
+      state.step += 1; const id = scenario.path[state.step]; selectNode(id); addEvent(id, state.step, scenario); $("runStatus").textContent = `${scenario.label} · ${id}`;
+      if (state.step === scenario.path.length - 1) stopPlayback();
+    }
+    function startPlayback() { stopPlayback(); state.playing = true; $("pauseButton").textContent = "Pause"; state.timer = setInterval(advance, 650); advance(); }
+    function reset() { stopPlayback(); state.step = -1; state.events = []; $("eventFeed").innerHTML = `<div class="event"><span class="event-time">--</span><span class="event-name">Ready</span><span class="event-detail">Select a node to inspect the main branch data contract, or run a scenario.</span></div>`; $("eventCount").textContent = "0"; $("runStatus").textContent = "Ready"; $("logHint").textContent = "Select a scenario and run it"; renderDetails(); applyView(); }
+
+    $("scenarioSelect").addEventListener("change", event => { state.scenario = event.target.value; reset(); });
+    $("viewSelect").addEventListener("change", event => { state.view = event.target.value; applyView(); renderDetails(); });
+    $("searchInput").addEventListener("input", event => { state.query = event.target.value; applyView(); });
+    $("runButton").addEventListener("click", startPlayback); $("stepButton").addEventListener("click", advance); $("resetButton").addEventListener("click", reset);
+    $("pauseButton").addEventListener("click", () => state.playing ? stopPlayback() : startPlayback());
+    window.addEventListener("resize", () => requestAnimationFrame(drawEdges));
+    renderLanes(); renderTokens(); renderDetails(); reset();
+  </script>
+</body>
+</html>

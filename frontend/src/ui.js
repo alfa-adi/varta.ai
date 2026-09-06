@@ -159,6 +159,27 @@ export function setRecordButton(speaker, recording) {
 }
 
 /**
+ * Enforce the conversation-level microphone lock in the UI.
+ * The active speaker remains clickable so they can stop their turn; the
+ * other speaker is disabled until the active turn reaches a terminal state.
+ * @param {'a'|'b'|null} activeSpeaker
+ */
+export function setSpeakerLock(activeSpeaker) {
+  for (const speaker of ['a', 'b']) {
+    const btn = document.getElementById(`btn-${speaker}`);
+    if (!btn) continue;
+
+    const locked = Boolean(activeSpeaker && speaker !== activeSpeaker);
+    btn.disabled = locked;
+    btn.setAttribute('aria-disabled', String(locked));
+    btn.classList.toggle('speaker-locked', locked);
+    btn.title = locked
+      ? `Waiting for Speaker ${activeSpeaker.toUpperCase()} to finish`
+      : 'Press to record';
+  }
+}
+
+/**
  * Show the session badge.
  * @param {string} sessionId
  */

@@ -7,9 +7,10 @@ No adapter is allowed to deviate from these signatures.
 """
  
 from abc import ABC, abstractmethod
+
 from pipeline.types import ASRInput, ASROutput, NMTInput, NMTOutput, TTSInput, TTSOutput
- 
- 
+
+
 class BaseASRAdapter(ABC):
     @abstractmethod
     async def transcribe(self, input: ASRInput) -> ASROutput:
