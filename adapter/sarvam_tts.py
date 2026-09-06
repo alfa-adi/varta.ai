@@ -89,7 +89,7 @@ class _BulbulConnection:
         )
         self._ws = await self._ws_ctx.__aenter__()
         await self._ws.configure(
-            language_code=self._language,      # ← documented field name
+            target_language_code=self._language,      # ← documented field name
             speaker=self._speaker,
             output_audio_codec=TTS_AUDIO_CODEC,
             speech_sample_rate=TTS_SAMPLE_RATE,
