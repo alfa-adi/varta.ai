@@ -5,23 +5,29 @@
  *
  * Connection model (per speaker):
  *   One LiveWS per active session.speaker pair.
- *   Stored in connRecords[speaker]: { ws, turnId, turnState, events, t0, hadError }.
+ *   Stored in connRecords[speaker]: { ws, captureState, activeCaptureTurnId, turns }.
  *
- * Turn state machine (per speaker):
- *   IDLE → RECORDING → WAITING → PLAYING → IDLE
+ * State model (continuous-playback refactor):
+ *   captureState tracks microphone recording only:
+ *     IDLE → STARTING → RECORDING → WAITING → IDLE
  *
- *   IDLE:      Button shows "Press to record". WS may or may not be open.
- *   RECORDING: Mic is live, PCM chunks flowing, turn_start sent.
- *   WAITING:   stop_recording sent; waiting for server transcript + audio.
- *   PLAYING:   audio_chunk frames arriving; TTS is playing.
+ *   Playback state is tracked independently per turn in the turns Map:
+ *     turns.get(turnId) → TurnRecord { serverAudioEnded, playbackStarted,
+ *                                       playbackPaused, playbackFinished, terminalEvent }
+ *
+ *   This separation allows a speaker to begin Turn 2 recording while Turn 1
+ *   audio is still playing (paused during capture, resumed after).
  *
  * Key invariants:
- *   - audio_chunk is only forwarded to the player if the turn_id matches the
- *     current active turn. Stale chunks from a previous turn are dropped.
- *   - audio_end resets the state to IDLE and fires analytics.
- *   - turn_error / turn_cancelled reset state and show the error UI.
- *   - toggleRecord() guard: a second press while WAITING is silently ignored
- *     (prevents double-submit). A press while PLAYING clears the player.
+ *   - audio_chunk is only forwarded to the player if the turn_id exists in
+ *     the turns Map. Stale chunks for unknown turns are dropped.
+ *   - audio_end records serverAudioEnded on the TurnRecord. The turn is NOT
+ *     finalized until playback completes or fails.
+ *   - captureState reaches IDLE when audio_end arrives (server pipeline done).
+ *     Playback may still be active for that turn.
+ *   - A maximum of 2 TurnRecords may exist per speaker at any time.
+ *   - activeSpeaker lock is held for the entire chained sequence and released
+ *     only when captureState === IDLE AND turns.size === 0.
  *   - __vartaTestHooks is exposed on window for browser automation tests.
  */
 
@@ -33,14 +39,26 @@ import { AudioPlayer }         from './player.js';
 import { reportTurn, makeTurnEvents } from './analytics.js';
 import * as UI                 from './ui.js';
 
-// ── Turn states ───────────────────────────────────────────────────────────────
+// ── Turn states (capture only) ────────────────────────────────────────────────
 
-const TurnState = Object.freeze({
+const CaptureState = Object.freeze({
   IDLE:      'IDLE',
   STARTING:  'STARTING',
   RECORDING: 'RECORDING',
   WAITING:   'WAITING',
-  PLAYING:   'PLAYING',
+});
+
+// ── Terminal event values ─────────────────────────────────────────────────────
+
+const TerminalEvent = Object.freeze({
+  AUDIO_END:               'audio_end',
+  NO_SPEECH:               'no_speech',
+  NMT_ERROR:               'nmt_error',
+  TTS_ERROR:               'tts_error',
+  CANCELLED:               'cancelled',
+  WEBSOCKET_CLOSED:        'websocket_closed',
+  PLAYBACK_ERROR:          'playback_error',
+  PLAYBACK_QUEUE_OVERFLOW: 'playback_queue_overflow',
 });
 
 // ── Global session state ──────────────────────────────────────────────────────
@@ -54,15 +72,29 @@ let sessionPromise = null;
 let activeSpeaker = null;
 
 /**
+ * Per-turn record tracking playback and analytics independently.
+ * @typedef {Object} TurnRecord
+ * @property {string}  turnId
+ * @property {ReturnType<typeof makeTurnEvents>} events
+ * @property {boolean} serverAudioEnded
+ * @property {boolean} playbackStarted
+ * @property {boolean} playbackPaused
+ * @property {boolean} playbackFinished
+ * @property {string|null} terminalEvent
+ */
+
+/**
  * Per-speaker connection record.
- * @typedef {{ ws: LiveWS|null, turnId: string|null, turnState: string,
- *             events: ReturnType<typeof makeTurnEvents>|null,
- *             t0: number, hadError: boolean }} ConnRecord
+ * captureState tracks microphone only; turns Map tracks playback per turn.
+ * @typedef {{ ws: LiveWS|null, captureState: string,
+ *             activeCaptureTurnId: string|null,
+ *             turns: Map<string, TurnRecord>,
+ *             hadError: boolean }} ConnRecord
  * @type {{ a: ConnRecord, b: ConnRecord }}
  */
 const connRecords = {
-  a: { ws: null, turnId: null, turnState: TurnState.IDLE, events: null, t0: 0, hadError: false },
-  b: { ws: null, turnId: null, turnState: TurnState.IDLE, events: null, t0: 0, hadError: false },
+  a: { ws: null, captureState: CaptureState.IDLE, activeCaptureTurnId: null, turns: new Map(), hadError: false },
+  b: { ws: null, captureState: CaptureState.IDLE, activeCaptureTurnId: null, turns: new Map(), hadError: false },
 };
 
 /** @type {{ a: Recorder, b: Recorder }} */
@@ -75,13 +107,42 @@ const players = { a: new AudioPlayer(), b: new AudioPlayer() };
 
 for (const sp of ['a', 'b']) {
   const inputSp = sp === 'a' ? 'b' : 'a';
+
   players[sp].onStateChange = (playing) => UI.setAudioPlaying(sp, playing);
-  players[sp].onStarted     = ()        => {
-    connRecords[inputSp].events?.stamp('audio_started');
+
+  players[sp].onStarted = () => {
+    // Find the earliest non-finished turn for this input speaker
+    for (const [, turn] of connRecords[inputSp].turns) {
+      if (!turn.playbackStarted) {
+        turn.playbackStarted = true;
+        turn.events?.stamp('audio_started');
+        break;
+      }
+    }
   };
-  players[sp].onFinished    = ()        => {
-    connRecords[inputSp].events?.stamp('audio_finished');
-    _finishTurn(inputSp, 'player_finished');
+
+  players[sp].onFinished = (turnId) => {
+    const turn = connRecords[inputSp].turns.get(turnId);
+    if (turn) {
+      turn.playbackFinished = true;
+      turn.events?.stamp('audio_finished');
+      _finishTurn(inputSp, turnId, 'player_finished');
+    }
+
+    // After this turn finishes, check if there's a paused queue to resume
+    _maybeResumePlayback(inputSp);
+  };
+
+  players[sp].onOverflow = (turnId) => {
+    const turn = connRecords[inputSp].turns.get(turnId);
+    if (turn) {
+      turn.terminalEvent = TerminalEvent.PLAYBACK_QUEUE_OVERFLOW;
+      turn.events?.stamp('playback_queue_overflow');
+    }
+    console.error(`[App] Playback queue overflow for turn=${turnId}`);
+    // Resume existing paused Turn 1 audio if possible
+    const outputSpeaker = inputSp === 'a' ? 'b' : 'a';
+    players[outputSpeaker].resumeQueue();
   };
 }
 
@@ -133,6 +194,20 @@ function releaseActiveSpeaker(speaker) {
   UI.setSpeakerLock(null);
 }
 
+/**
+ * Check whether the speaker lock can be safely released.
+ * The lock is only released when captureState is IDLE AND no turns remain.
+ */
+function _maybeReleaseLock(speaker) {
+  const rec = connRecords[speaker];
+  if (rec.captureState === CaptureState.IDLE && rec.turns.size === 0) {
+    releaseActiveSpeaker(speaker);
+    UI.setRecordButton(speaker, false);
+    UI.setLabel(speaker, 'Press to record');
+    UI.setSpinner(speaker, false);
+  }
+}
+
 // ── WebSocket management ──────────────────────────────────────────────────────
 
 async function ensureLiveWS(speaker) {
@@ -175,11 +250,28 @@ async function ensureLiveWS(speaker) {
     if (connRecords[speaker].ws !== ws) return;
     connRecords[speaker].ws = null;
 
-    // If we were mid-turn, clean up state
-    const state = connRecords[speaker].turnState;
-    if (state !== TurnState.IDLE) {
+    // If we were mid-capture, clean up capture state
+    const captureState = connRecords[speaker].captureState;
+    if (captureState !== CaptureState.IDLE) {
       connRecords[speaker].hadError = true;
-      _resetToIdle(speaker);
+
+      // Mark active capture turn as websocket_closed
+      const activeTurnId = connRecords[speaker].activeCaptureTurnId;
+      if (activeTurnId) {
+        const turn = connRecords[speaker].turns.get(activeTurnId);
+        if (turn && !turn.terminalEvent) {
+          turn.terminalEvent = TerminalEvent.WEBSOCKET_CLOSED;
+          turn.events?.stamp('websocket_closed');
+        }
+      }
+
+      // Reset capture state but let buffered playback finish
+      _resetCaptureToIdle(speaker);
+
+      // Resume any paused playback so Turn 1 audio plays out locally
+      const outputSpeaker = speaker === 'a' ? 'b' : 'a';
+      players[outputSpeaker].resumeQueue();
+
       if (code !== 1000 && code !== 1001) {
         UI.showError(code === 4409
           ? 'Duplicate connection. Only one tab can record per session.'
@@ -206,52 +298,57 @@ function _handleServerMsg(speaker, msg) {
 
     case 'transcript_partial': {
       // Accept even without turn_id (legacy grace period)
-      const turnMatch = !msg.turn_id || msg.turn_id === rec.turnId;
+      const turnMatch = !msg.turn_id || msg.turn_id === rec.activeCaptureTurnId;
       if (!turnMatch) break;
       UI.setLiveTranscript(speaker, msg.text ?? msg.transcript ?? '');
-      rec.events?.stamp('first_partial');
+      const turn = rec.turns.get(msg.turn_id || rec.activeCaptureTurnId);
+      turn?.events?.stamp('first_partial');
       break;
     }
 
     case 'transcript_final': {
-      const turnMatch = !msg.turn_id || msg.turn_id === rec.turnId;
-      if (!turnMatch) break;
+      const turnId = msg.turn_id || rec.activeCaptureTurnId;
+      const turn = rec.turns.get(turnId);
+      if (!turn) break;
       const text = msg.text ?? msg.transcript ?? '';
       UI.clearLiveTranscript(speaker);
       UI.addBubble(speaker, text, msg.language_code || '');
-      rec.events?.stamp('transcript_final');
+      turn.events?.stamp('transcript_final');
       // Transition to WAITING if still RECORDING (server beat the stop signal)
-      if (rec.turnState === TurnState.RECORDING) {
-        rec.turnState = TurnState.WAITING;
+      if (rec.captureState === CaptureState.RECORDING) {
+        rec.captureState = CaptureState.WAITING;
       }
       break;
     }
 
     case 'language_detected': {
-      const turnMatch = !msg.turn_id || msg.turn_id === rec.turnId;
-      if (!turnMatch) break;
+      const turnId = msg.turn_id || rec.activeCaptureTurnId;
+      const turn = rec.turns.get(turnId);
+      if (!turn) break;
       UI.setLanguageLabel(speaker, msg.language_code || msg.language || '');
       break;
     }
 
     case 'audio_chunk': {
-      // Strict turn_id guard — drop stale chunks
-      if (msg.turn_id && msg.turn_id !== rec.turnId) {
-        console.warn(`[App] Dropped stale audio_chunk turn=${msg.turn_id} current=${rec.turnId}`);
+      const turnId = msg.turn_id;
+      // Strict turn_id guard — drop chunks for unknown turns
+      if (!turnId || !rec.turns.has(turnId)) {
+        console.warn(`[App] Dropped stale audio_chunk turn=${turnId} (not in turns map)`);
         break;
       }
+
+      const turn = rec.turns.get(turnId);
 
       // TTS audio plays on the OUTPUT speaker's panel
       const outputSpeaker = speaker === 'a' ? 'b' : 'a';
 
-      if (rec.turnState === TurnState.WAITING) {
-        rec.turnState = TurnState.PLAYING;
+      if (rec.captureState === CaptureState.WAITING && turnId === rec.activeCaptureTurnId) {
         UI.setSpinner(speaker, false);
         UI.setLabel(speaker, 'Speaking…');
-        rec.events?.stamp('first_audio_chunk');
+        turn.events?.stamp('first_audio_chunk');
       }
 
-      players[outputSpeaker].enqueue(msg.data, {
+      players[outputSpeaker].enqueue(turnId, msg.data, {
         sample_rate_hz: msg.sample_rate_hz,
         channels:       msg.channels,
         format:         msg.format,
@@ -260,31 +357,84 @@ function _handleServerMsg(speaker, msg) {
     }
 
     case 'audio_end': {
-      if (msg.turn_id && msg.turn_id !== rec.turnId) break;
-      rec.events?.stamp('audio_end_received');
-      // audio_end means all server chunks are in the pipe.
-      // Player's onFinished will fire when the last one plays out → _finishTurn.
-      players[speaker === 'a' ? 'b' : 'a'].flush();
+      const turnId = msg.turn_id;
+      const turn = rec.turns.get(turnId);
+      if (!turn) break;
+
+      turn.serverAudioEnded = true;
+      turn.terminalEvent = TerminalEvent.AUDIO_END;
+      turn.events?.stamp('audio_end_received');
+
+      // Signal the player that no more chunks will arrive for this turn
+      const outputSpeaker = speaker === 'a' ? 'b' : 'a';
+      players[outputSpeaker].markAudioEnd(turnId);
+
+      // Release capture state — the server pipeline is done.
+      // This allows a new turn to start even if playback is still active.
+      if (rec.activeCaptureTurnId === turnId) {
+        rec.captureState = CaptureState.IDLE;
+        rec.activeCaptureTurnId = null;
+        UI.setSpinner(speaker, false);
+      }
+
       // If no audio was sent (empty TTS), finishTurn immediately.
-      if (rec.turnState !== TurnState.PLAYING) {
-        _finishTurn(speaker, 'audio_end_no_audio');
+      if (!turn.playbackStarted) {
+        _finishTurn(speaker, turnId, 'audio_end_no_audio');
       }
       break;
     }
 
     case 'turn_error': {
-      if (msg.turn_id && msg.turn_id !== rec.turnId) break;
+      const turnId = msg.turn_id || rec.activeCaptureTurnId;
+      const turn = rec.turns.get(turnId);
+      if (!turn) break;
+
       console.error(`[App] turn_error (${speaker}): ${msg.code} — ${msg.message}`);
+
+      // Classify the terminal event
+      const code = msg.code || '';
+      if (code.includes('NMT'))       turn.terminalEvent = TerminalEvent.NMT_ERROR;
+      else if (code.includes('TTS'))  turn.terminalEvent = TerminalEvent.TTS_ERROR;
+      else if (code === 'FINAL_TRANSCRIPT_TIMEOUT') turn.terminalEvent = TerminalEvent.NO_SPEECH;
+      else                            turn.terminalEvent = TerminalEvent.CANCELLED;
+
+      turn.events?.stamp('turn_error');
       rec.hadError = true;
-      _resetToIdle(speaker);
+
+      // If this was the active capture turn, reset capture
+      if (rec.activeCaptureTurnId === turnId) {
+        _resetCaptureToIdle(speaker);
+      }
+
+      // Resume any paused playback for the other turn
+      const outputSpeaker = speaker === 'a' ? 'b' : 'a';
+      players[outputSpeaker].resumeQueue();
+
+      // Finalize this specific turn
+      _finishTurn(speaker, turnId, 'turn_error');
+
       UI.showError(msg.message || 'A server error occurred. Please try again.');
       break;
     }
 
     case 'turn_cancelled': {
-      if (msg.turn_id && msg.turn_id !== rec.turnId) break;
+      const turnId = msg.turn_id || rec.activeCaptureTurnId;
+      const turn = rec.turns.get(turnId);
+      if (!turn) break;
+
       console.warn(`[App] turn_cancelled (${speaker}): ${msg.reason}`);
-      _resetToIdle(speaker);
+      turn.terminalEvent = TerminalEvent.CANCELLED;
+      turn.events?.stamp('turn_cancelled');
+
+      if (rec.activeCaptureTurnId === turnId) {
+        _resetCaptureToIdle(speaker);
+      }
+
+      // Resume paused playback
+      const outputSpeaker = speaker === 'a' ? 'b' : 'a';
+      players[outputSpeaker].resumeQueue();
+
+      _finishTurn(speaker, turnId, 'turn_cancelled');
       break;
     }
 
@@ -303,19 +453,43 @@ function _handleServerMsg(speaker, msg) {
 
 // ── Turn lifecycle helpers ────────────────────────────────────────────────────
 
-function _finishTurn(speaker, reason) {
+/**
+ * Create a new TurnRecord for the given speaker and turn ID.
+ * @param {string} speaker
+ * @param {string} turnId
+ * @returns {TurnRecord}
+ */
+function _createTurnRecord(speaker, turnId) {
+  const turn = {
+    turnId,
+    events:           makeTurnEvents(),
+    serverAudioEnded: false,
+    playbackStarted:  false,
+    playbackPaused:   false,
+    playbackFinished: false,
+    terminalEvent:    null,
+  };
+  connRecords[speaker].turns.set(turnId, turn);
+  return turn;
+}
+
+/**
+ * Finalize a specific turn: emit analytics, remove the TurnRecord,
+ * and check whether the speaker lock can be released.
+ */
+function _finishTurn(speaker, turnId, reason) {
   const rec = connRecords[speaker];
+  const turn = rec.turns.get(turnId);
 
-  // Idempotent — may be called from audio_end OR player.onFinished
-  if (rec.turnState === TurnState.IDLE) return;
+  if (!turn) return; // already cleaned up
 
-  rec.events?.stamp('turn_finished');
-  const events = rec.events?.finish() ?? {};
+  turn.events?.stamp('turn_finished');
+  const events = turn.events?.finish() ?? {};
 
   // Report analytics
   reportTurn({
     sessionId,
-    turnId:        rec.turnId,
+    turnId:        turn.turnId,
     inputSpeaker:  speaker,
     outputSpeaker: speaker === 'a' ? 'b' : 'a',
     uploadMs:      events.recording_stopped && events.turn_started
@@ -330,19 +504,36 @@ function _finishTurn(speaker, reason) {
     events,
   });
 
-  console.log(`[App] Turn finished (${speaker}): reason=${reason} dur=${events._duration ?? '?'}ms clean=${!rec.hadError}`);
+  console.log(`[App] Turn finished (${speaker}): turnId=${turnId} reason=${reason} dur=${events._duration ?? '?'}ms terminal=${turn.terminalEvent}`);
 
-  recorders[speaker].isRecording && recorders[speaker].stop(null, null);
-  rec.turnId    = null;
-  rec.turnState = TurnState.IDLE;
-  rec.events    = null;
-  releaseActiveSpeaker(speaker);
+  // Remove the turn record
+  rec.turns.delete(turnId);
+
+  // Check if the speaker lock can be released
+  _maybeReleaseLock(speaker);
+}
+
+/**
+ * Reset only the capture state to IDLE. Does NOT clear playback or turns Map.
+ * Used when the server pipeline finishes or errors, but playback may continue.
+ */
+function _resetCaptureToIdle(speaker) {
+  const rec = connRecords[speaker];
+  if (recorders[speaker].isRecording) {
+    recorders[speaker].stop(null, null);
+  }
+  rec.captureState = CaptureState.IDLE;
+  rec.activeCaptureTurnId = null;
 
   UI.setRecordButton(speaker, false);
-  UI.setLabel(speaker, 'Press to record');
+  UI.setLabel(speaker, rec.turns.size > 0 ? 'Playing…' : 'Press to record');
   UI.setSpinner(speaker, false);
 }
 
+/**
+ * Full nuclear reset: stops recording, clears playback, removes all turns,
+ * releases the speaker lock. Used only for catastrophic failures and legacy errors.
+ */
 function _resetToIdle(speaker) {
   const rec = connRecords[speaker];
   if (recorders[speaker].isRecording) {
@@ -351,14 +542,27 @@ function _resetToIdle(speaker) {
   const outputSpeaker = speaker === 'a' ? 'b' : 'a';
   players[outputSpeaker].clear();
 
-  rec.turnId    = null;
-  rec.turnState = TurnState.IDLE;
-  rec.events    = null;
+  rec.captureState = CaptureState.IDLE;
+  rec.activeCaptureTurnId = null;
+  rec.turns.clear();
   releaseActiveSpeaker(speaker);
 
   UI.setRecordButton(speaker, false);
   UI.setLabel(speaker, 'Press to record');
   UI.setSpinner(speaker, false);
+}
+
+/**
+ * After a turn finishes playback, check if the next turn's audio should resume.
+ */
+function _maybeResumePlayback(speaker) {
+  const rec = connRecords[speaker];
+  const outputSpeaker = speaker === 'a' ? 'b' : 'a';
+
+  // If capture is IDLE and there's still paused audio, resume it
+  if (rec.captureState === CaptureState.IDLE) {
+    players[outputSpeaker].resumeQueue();
+  }
 }
 
 // ── Toggle record ─────────────────────────────────────────────────────────────
@@ -377,58 +581,72 @@ async function toggleRecord(speaker) {
       return;
     }
 
-    if (rec.turnState === TurnState.WAITING) {
+    if (rec.captureState === CaptureState.WAITING) {
       // Mid-turn: ignore double-press (server is processing)
       console.log(`[App] Ignored toggleRecord in WAITING state (${speaker})`);
       return;
     }
 
-    if (rec.turnState === TurnState.STARTING) {
+    if (rec.captureState === CaptureState.STARTING) {
       // Prevent a second click while the socket/microphone is being prepared.
       return;
     }
 
-    if (rec.turnState === TurnState.PLAYING) {
-      // User pressed while other speaker is playing — interrupt playback
-      const outputSpeaker = speaker === 'a' ? 'b' : 'a';
-      players[outputSpeaker].clear();
-      _resetToIdle(speaker);
-      return;
-    }
-
-    if (rec.turnState === TurnState.RECORDING) {
+    if (rec.captureState === CaptureState.RECORDING) {
       // ── STOP ────────────────────────────────────────────────────────────
-      rec.events?.stamp('recording_stopped');
+      const activeTurnId = rec.activeCaptureTurnId;
+      const turn = rec.turns.get(activeTurnId);
+      turn?.events?.stamp('recording_stopped');
 
-      // Stop mic (send no stop_recording yet — we send it via ws.stop below)
+      // Stop mic
       await recorders[speaker].stop(null, null);
 
       // Send stop_recording with turn_id
-      if (rec.ws && rec.turnId) {
-        rec.ws.stop(rec.turnId);
+      if (rec.ws && activeTurnId) {
+        rec.ws.stop(activeTurnId);
       }
 
-      rec.turnState = TurnState.WAITING;
+      rec.captureState = CaptureState.WAITING;
       UI.setRecordButton(speaker, false);
       UI.setLabel(speaker, 'Processing…');
       UI.setSpinner(speaker, true);
 
     } else {
       // ── START ────────────────────────────────────────────────────────────
+      // captureState must be IDLE to start a new turn
+      if (rec.captureState !== CaptureState.IDLE) return;
+
       setActiveSpeaker(speaker);
-      rec.turnState = TurnState.STARTING;
+      rec.captureState = CaptureState.STARTING;
       await ensureLiveWS(speaker);
 
-      // Clear the other speaker's player before we begin
+      // Pause the other speaker's player if audio is currently playing
+      // (Turn 1 audio pauses so Turn 2 can record)
       const outputSpeaker = speaker === 'a' ? 'b' : 'a';
-      players[outputSpeaker].clear();
+
+      // Check if there's active playback for a previous turn
+      const hasPreviousTurn = rec.turns.size > 0;
+      if (hasPreviousTurn) {
+        // Pause playback — do NOT clear it
+        const previousTurnId = [...rec.turns.keys()][0];
+        const previousTurn = rec.turns.get(previousTurnId);
+        if (previousTurn && !previousTurn.playbackFinished) {
+          previousTurn.playbackPaused = true;
+          previousTurn.events?.stamp('playback_paused');
+          players[outputSpeaker].pause(previousTurnId);
+        }
+      } else {
+        // No previous turn — clear any stale audio
+        players[outputSpeaker].clear();
+      }
 
       // Assign a new turn ID
       const turnId = crypto.randomUUID ? crypto.randomUUID() : _uuid4();
-      rec.turnId    = turnId;
-      rec.hadError  = false;
-      rec.events    = makeTurnEvents();
-      rec.events.stamp('turn_started');
+      rec.activeCaptureTurnId = turnId;
+      rec.hadError = false;
+
+      const turn = _createTurnRecord(speaker, turnId);
+      turn.events.stamp('turn_started');
 
       // Send turn_start before the first audio chunk
       rec.ws.sendTurnStart(turnId, outputSpeaker);
@@ -436,8 +654,7 @@ async function toggleRecord(speaker) {
       // Start microphone + worklet
       await recorders[speaker].start(rec.ws);
 
-      rec.turnState = TurnState.RECORDING;
-      rec.t0        = Date.now();
+      rec.captureState = CaptureState.RECORDING;
 
       UI.setRecordButton(speaker, true);
       UI.setLabel(speaker, 'Recording…');
@@ -462,18 +679,21 @@ window.toggleRecord = toggleRecord;
  * Do not use in production application code.
  */
 window.__vartaTestHooks = {
-  /** Returns the current TurnState for the given speaker. */
-  getTurnState: (sp) => connRecords[sp]?.turnState,
-  /** Returns the active turn ID for the given speaker. */
-  getTurnId:    (sp) => connRecords[sp]?.turnId,
+  /** Returns the current CaptureState for the given speaker. */
+  getCaptureState: (sp) => connRecords[sp]?.captureState,
+  /** Returns the active capture turn ID for the given speaker. */
+  getActiveTurnId: (sp) => connRecords[sp]?.activeCaptureTurnId,
+  /** Returns the entire turns Map for the given speaker (for inspection). */
+  getTurns:        (sp) => connRecords[sp]?.turns,
   /** Returns the WebSocket state string for the given speaker. */
-  getWSState:   (sp) => connRecords[sp]?.ws?.state ?? 'NONE',
+  getWSState:      (sp) => connRecords[sp]?.ws?.state ?? 'NONE',
   /** Returns player counters for the given speaker. */
   getPlayerCounters: (sp) => ({
     started:    players[sp]?.audio_started,
     finished:   players[sp]?.audio_finished,
     cleared:    players[sp]?.audio_cleared,
     decoded:    players[sp]?.decodedSampleCount,
+    decodedByTurn: Object.fromEntries(players[sp]?.decodedSamplesByTurn ?? new Map()),
   }),
   /** Returns recorder queue stats for the given speaker. */
   getRecorderStats: (sp) => ({
@@ -485,8 +705,17 @@ window.__vartaTestHooks = {
   getSessionId: () => sessionId,
   /** Returns the speaker currently holding the conversation microphone lock. */
   getActiveSpeaker: () => activeSpeaker,
-  /** TurnState enum (for assertions in tests). */
-  TurnState,
+  /** CaptureState enum (for assertions in tests). */
+  CaptureState,
+  /** TerminalEvent enum (for assertions in tests). */
+  TerminalEvent,
+  // Legacy aliases for backward compat with existing tests
+  /** @deprecated Use getCaptureState instead */
+  getTurnState: (sp) => connRecords[sp]?.captureState,
+  /** @deprecated Use getActiveTurnId instead */
+  getTurnId:    (sp) => connRecords[sp]?.activeCaptureTurnId,
+  /** @deprecated Use CaptureState instead */
+  TurnState: CaptureState,
 };
 
 // ── Cleanup on unload ─────────────────────────────────────────────────────────
