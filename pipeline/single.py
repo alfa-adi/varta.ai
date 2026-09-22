@@ -159,6 +159,7 @@ class SinglePipeline:
                 tgt_language = self.tgt_language,
             )
         )
+        self.last_nmt_output = nmt_output
 
         # ── Step 2: TTS streaming — yield chunks as they arrive ───────
         # synthesise_streaming() is an async generator that yields each

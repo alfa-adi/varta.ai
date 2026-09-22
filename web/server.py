@@ -24,6 +24,8 @@ Deployment notes:
 
 import asyncio
 import base64
+import hashlib
+from web.services import conversation_service as cs_mod
 import json
 import os
 import time
@@ -32,10 +34,14 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import (
+    BackgroundTasks,
+    Depends,
     FastAPI,
     File,
     Form,
+    Header,
     HTTPException,
+    Request,
     UploadFile,
     WebSocket,
     WebSocketDisconnect,
@@ -104,12 +110,12 @@ if REDIS_URL:
         import redis as redis_lib
         _redis = redis_lib.from_url(REDIS_URL, decode_responses=True)
         _redis.ping()
-        print("  Redis connected — sessions and leases persist across restarts")
+        print("  Redis connected - sessions and leases persist across restarts")
     except Exception as e:
         print(f"  Redis connection failed ({e})")
         _redis = None
 else:
-    print("  No REDIS_URL — using in-memory sessions (local mode)")
+    print("  No REDIS_URL - using in-memory sessions (local mode)")
 
 # ── MongoDB Logging + Metrics ────────────────────────────────────────────────
 # Two databases on the same cluster:
@@ -130,9 +136,9 @@ if MONGO_URL:
         _mongo_client.server_info()   # fail fast if connection is broken
         _mongo         = _mongo_client[MONGO_DB]
         _mongo_metrics = _mongo_client["varta_metrics"]
-        print("✅  MongoDB connected")
-        print(f"    logs    → {MONGO_DB}")
-        print("    metrics → varta_metrics")
+        print("  MongoDB connected")
+        print(f"    logs    -> {MONGO_DB}")
+        print("    metrics -> varta_metrics")
     except Exception as e:
         print(f"[WARN] MongoDB failed ({e}) - logging disabled")
         _mongo         = None
@@ -182,28 +188,55 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 # This means if you ever switch from Redis to something else,
 # you only change these four functions, nothing else.
 
-def save_session(session_id: str, lang_a, lang_b, pending_a=None, pending_b=None):
-    # Converts session data into a string
-    # because Redis can only store strings, not Python objects
-    data = json.dumps({
-        "lang_a": lang_a,
-        "lang_b": lang_b,
-        "pending_transcript_a": pending_a,
-        "pending_transcript_b": pending_b,
-    })
+# Sentinel — module-level; do NOT export.
+_UNSET = object()
 
-    if _redis:
-        # setex = "set with expiry"
-        # saves the string to Redis and marks it to auto-delete after SESSION_TTL
-        _redis.setex(f"session:{session_id}", SESSION_TTL, data)
-    else:
-        # No Redis — save to the in-memory dict instead
+def save_session(
+    session_id:  str,
+    lang_a,
+    lang_b,
+    pending_a=None,
+    pending_b=None,
+    pending_turn_id_a=_UNSET,
+    pending_turn_id_b=_UNSET,
+    is_durable=_UNSET,
+    durable_user_id=_UNSET,
+    durable_customer_id=_UNSET,
+    durable_session_id=_UNSET,
+):
+    if _redis is None:
         _local_sessions[session_id] = {
             "lang_a": lang_a,
             "lang_b": lang_b,
             "pending_transcript_a": pending_a,
             "pending_transcript_b": pending_b,
         }
+        return
+
+    # Load existing to retain durable identity fields (lost-update race is an accepted limitation)
+    existing = load_session(session_id) or {}
+    
+    # Resolve pending turns (legacy positional vs explicit kwargs)
+    val_a = pending_a if pending_a is not None else existing.get("pending_transcript_a")
+    if pending_turn_id_a is not _UNSET:
+        val_a = pending_turn_id_a
+
+    val_b = pending_b if pending_b is not None else existing.get("pending_transcript_b")
+    if pending_turn_id_b is not _UNSET:
+        val_b = pending_turn_id_b
+
+    data = {
+        "lang_a": lang_a,
+        "lang_b": lang_b,
+        "pending_transcript_a": val_a or "",
+        "pending_transcript_b": val_b or "",
+        "is_durable": existing.get("is_durable", False) if is_durable is _UNSET else is_durable,
+        "durable_user_id": existing.get("durable_user_id") if durable_user_id is _UNSET else durable_user_id,
+        "durable_customer_id": existing.get("durable_customer_id") if durable_customer_id is _UNSET else durable_customer_id,
+        "durable_session_id": existing.get("durable_session_id") if durable_session_id is _UNSET else durable_session_id,
+    }
+    _redis.setex(f"session:{session_id}", SESSION_TTL, json.dumps(data))
+
 
 
 def load_session(session_id: str):
@@ -434,13 +467,50 @@ async def health_check():
 # Printed once at startup — shows connection status at a glance
 # Green = connected and working
 # Warning = fallback mode (still works, just not persistent)
-print("─" * 50)
-print("  Sarvam Translation PoC — ready")
-print(f"  Redis:   {'✅ connected' if _redis else '⚠️  in-memory fallback'}")
-print(f"  MongoDB: {'✅ logs + metrics' if _mongo is not None else '⚠️  disabled'}")
+print("-" * 50)
+print("  Sarvam Translation PoC - ready")
+print(f"  Redis:   {'connected' if _redis else 'in-memory fallback'}")
+print(f"  MongoDB: {'logs + metrics' if _mongo is not None else 'disabled'}")
 print(f"  CORS:    {allowed_origins}")
-print("─" * 50)
+print("-" * 50)
 
+
+
+from web.auth import get_current_user, AuthenticatedUser
+
+@app.post("/session/create_durable")
+async def create_durable_session(
+    customer_id: str = Form(...),
+    token_payload: AuthenticatedUser = Depends(get_current_user)
+):
+    if _redis is None:
+        raise HTTPException(503, "Durable sessions require Redis")
+        
+    session_id = str(uuid.uuid4())
+    user_id = token_payload.user_id
+    
+    # 1. Write ledger entry to Mongo inline (fail closed)
+    from web.services import conversation_service as cs_mod
+    try:
+        await asyncio.to_thread(
+            cs_mod.conv_svc.create_session_doc_sync,
+            user_id, session_id, customer_id
+        )
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).error(f"[Persist] create_durable failed Mongo insert: {exc}")
+        raise HTTPException(500, "Could not initialize durable session")
+        
+    # 2. Write runtime state to Redis
+    save_session(
+        session_id,
+        "hi-IN", "en-IN",  # Defaults, overridden by first WS
+        is_durable=True,
+        durable_user_id=user_id,
+        durable_customer_id=customer_id,
+        durable_session_id=session_id
+    )
+    return {"session_id": session_id}
 
 @app.post("/session/create")
 async def create_session(
@@ -549,28 +619,86 @@ async def translate_single(
 
 @app.post("/translate/dual")
 async def translate_dual(
-    audio_a:    UploadFile = File(...),
-    audio_b:    UploadFile = File(...),
-    session_id: str        = Form(...),
+    audio_a:       UploadFile = File(...),
+    audio_b:       UploadFile = File(...),
+    session_id:    str        = Form(...),
+    x_request_id:  str | None = Header(None, alias="X-Request-Id"),
+    bg_tasks: BackgroundTasks = BackgroundTasks(),
 ):
-    """
-    Simultaneous two-way translation.
-    Both speakers upload their audio in the same request.
-    Both translations are returned together.
-    Both ASR, NMT, and TTS calls run in parallel internally.
-    """
     server_start = int(time.time() * 1000)
 
     bytes_a = await audio_a.read()
     bytes_b = await audio_b.read()
-    fmt_a = audio_a.filename.rsplit(".", 1)[-1].lower() if audio_a.filename else "wav"
+    fmt_a   = audio_a.filename.rsplit(".", 1)[-1].lower() if audio_a.filename else "wav"
+
+    s          = load_session(session_id) or {}
+    is_durable = s.get("is_durable", False)
+    durable_uid = s.get("durable_user_id")
+
+    if x_request_id:
+        turn_id_a = f"{x_request_id}:a"
+        turn_id_b = f"{x_request_id}:b"
+    else:
+        turn_id_a = f"dual_{uuid.uuid4().hex[:8]}:a"
+        turn_id_b = f"dual_{uuid.uuid4().hex[:8]}:b"
+
+    fp_a = hashlib.sha256(bytes_a).hexdigest()
+    fp_b = hashlib.sha256(bytes_b).hexdigest()
+
+    if is_durable and durable_uid:
+        import asyncio
+        try:
+            try:
+                existing_a = await asyncio.to_thread(cs_mod.conv_svc.get_turn_sync, durable_uid, turn_id_a)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"get_turn_sync A failed: {e}")
+                existing_a = None
+
+            if existing_a:
+                try:
+                    existing_b = await asyncio.to_thread(cs_mod.conv_svc.get_turn_sync, durable_uid, turn_id_b)
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).warning(f"get_turn_sync B failed: {e}")
+                    existing_b = None
+                if existing_b and existing_b.get("audio_fingerprint") == fp_a and existing_b.get("status") == "completed" and existing_a.get("audio_fingerprint") == fp_b and existing_a.get("status") == "completed":
+                    t_a = existing_a.get("translation", {})
+                    t_b = existing_b.get("translation", {})
+                    return JSONResponse({
+                        "for_speaker_a": {
+                            "transcript":       existing_a.get("transcript"),
+                            "translation":      t_a.get("translated_text"),
+                            "src_language":     existing_a.get("source_language"),
+                            "tgt_language":     t_a.get("tgt_language"),
+                            "audio_b64":        None,
+                            "total_latency_ms": 0,
+                            "timing":           existing_a.get("timing", {}),
+                            "cached":           True,
+                        },
+                        "for_speaker_b": {
+                            "transcript":       existing_b.get("transcript"),
+                            "translation":      t_b.get("translated_text"),
+                            "src_language":     existing_b.get("source_language"),
+                            "tgt_language":     t_b.get("tgt_language"),
+                            "audio_b64":        None,
+                            "total_latency_ms": 0,
+                            "timing":           existing_b.get("timing", {}),
+                            "cached":           True,
+                        },
+                    })
+                raise HTTPException(409, "Request still in progress; retry after completion")
+        except HTTPException:
+            raise
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error(f"[Persist] Fail-open: get_turn error: {exc}")
 
     pipeline, session_load_ms, pipeline_build_ms = _get_or_create_session(session_id)
-
     try:
         dual_result = await pipeline.process_both(bytes_a, bytes_b, audio_format=fmt_a)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
     r_a = dual_result.for_speaker_a
     r_b = dual_result.for_speaker_b
@@ -628,6 +756,36 @@ async def translate_dual(
                 src_lang=r_b.src_language, tgt_lang=r_b.tgt_language,
                 char_count=len(r_b.source_transcript))
 
+    if is_durable and durable_uid:
+        import asyncio
+        async def _persist_dual_both():
+            for (tid, fp, res, spk) in [
+                (turn_id_a, fp_b, r_a, "b"),
+                (turn_id_b, fp_a, r_b, "a"),
+            ]:
+                try:
+                    _, is_new = await asyncio.to_thread(cs_mod.conv_svc.reserve_turn_sync, durable_uid, session_id, tid, spk, fp)
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error(f"Reserve failed: {e}")
+                    continue
+                if not is_new:
+                    continue
+                src = res.src_language or ""
+                if src and src != "auto":
+                    try:
+                        await asyncio.to_thread(cs_mod.conv_svc.update_asr_sync, durable_uid, tid, res.source_transcript, src)
+                    except ValueError:
+                        pass
+                try:
+                    trans_doc = {"translated_text": res.translated_text, "tgt_language": res.tgt_language}
+                    await asyncio.to_thread(cs_mod.conv_svc.complete_turn_sync, durable_uid, tid, session_id, trans_doc, None)
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error(f"Complete sync failed: {e}")
+
+        bg_tasks.add_task(_persist_dual_both)
+
     return JSONResponse(response_data)
 
 
@@ -635,13 +793,22 @@ async def translate_dual(
 async def translate_speaker_a(
     audio:      UploadFile = File(...),
     session_id: str        = Form(...),
+    bg_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     """Turn-by-turn: process only Speaker A's audio."""
+    import hashlib
     server_start = int(time.time() * 1000)
 
     audio_bytes = await audio.read()
     ext = audio.filename.rsplit(".", 1)[-1].lower() if audio.filename else "wav"
     pipeline, session_load_ms, pipeline_build_ms = _get_or_create_session(session_id)
+    
+    s = load_session(session_id) or {}
+    is_durable = s.get("is_durable", False)
+    durable_uid = s.get("durable_user_id")
+    
+    turn_id = f"spa_{uuid.uuid4().hex[:8]}"
+    fp = hashlib.sha256(audio_bytes).hexdigest()
 
     try:
         speaker_result = await pipeline.process_speaker_a(audio_bytes, audio_format=ext)
@@ -654,6 +821,15 @@ async def translate_speaker_a(
     state_save_ms = int(time.time() * 1000) - state_start
 
     if speaker_result.buffered:
+        if is_durable and durable_uid:
+            from web.services import conversation_service as cs_mod
+            import asyncio
+            try:
+                await asyncio.to_thread(cs_mod.conv_svc.reserve_turn_sync, durable_uid, session_id, turn_id, "a", fp)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Reserve fail: {e}")
+            save_session(session_id, pending_turn_id_a=turn_id)
         return JSONResponse({"status": "buffered", "message": "Waiting for Speaker B language detection"})
 
     result = speaker_result.result
@@ -672,7 +848,6 @@ async def translate_speaker_a(
 
     # ── Build response with timing ───────────────────────────────
     resp_start = int(time.time() * 1000)
-
     server_timing = {
         "total_ms":          0,
         "session_load_ms":   session_load_ms,
@@ -693,6 +868,24 @@ async def translate_speaker_a(
         "total_latency_ms": result.total_latency_ms,
         "timing":           timing,
     }
+    
+    if is_durable and durable_uid:
+        import asyncio
+        async def _persist_spa():
+            try:
+                from web.services import conversation_service as cs_mod
+                _, is_new = await asyncio.to_thread(cs_mod.conv_svc.reserve_turn_sync, durable_uid, session_id, turn_id, "a", fp)
+                if not is_new: return
+                src = result.src_language or ""
+                if src and src != "auto":
+                    try: await asyncio.to_thread(cs_mod.conv_svc.update_asr_sync, durable_uid, turn_id, result.source_transcript, src)
+                    except ValueError: pass
+                trans_doc = {"translated_text": result.translated_text, "tgt_language": result.tgt_language}
+                await asyncio.to_thread(cs_mod.conv_svc.complete_turn_sync, durable_uid, turn_id, session_id, trans_doc, None)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"[_persist_spa] failed: {e}")
+        bg_tasks.add_task(_persist_spa)
 
     # If Speaker B had a buffered transcript, include the deferred result
     if speaker_result.deferred_result:
@@ -720,14 +913,23 @@ async def translate_speaker_a(
             latency_ms = dr.total_latency_ms,
             char_count = len(dr.source_transcript),
         )
-        log_metrics(
-            session_id = session_id,
-            endpoint   = "speaker_b_deferred",
-            timing     = dr_timing,
-            src_lang   = dr.src_language,
-            tgt_lang   = dr.tgt_language,
-            char_count = len(dr.source_transcript),
-        )
+        
+        deferred_turn_id = s.get("pending_turn_id_b")
+        if is_durable and durable_uid and deferred_turn_id:
+            import asyncio
+            async def _persist_deferred_spb():
+                try:
+                    from web.services import conversation_service as cs_mod
+                    src = dr.src_language or ""
+                    if src and src != "auto":
+                        try: await asyncio.to_thread(cs_mod.conv_svc.update_asr_sync, durable_uid, deferred_turn_id, dr.source_transcript, src)
+                        except ValueError: pass
+                    trans_doc = {"translated_text": dr.translated_text, "tgt_language": dr.tgt_language}
+                    await asyncio.to_thread(cs_mod.conv_svc.complete_turn_sync, durable_uid, deferred_turn_id, session_id, trans_doc, None)
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error(f"[_persist_deferred_spb] failed: {e}")
+            bg_tasks.add_task(_persist_deferred_spb)
 
     response_build_ms = int(time.time() * 1000) - resp_start
     total_server_ms = int(time.time() * 1000) - server_start
@@ -735,7 +937,6 @@ async def translate_speaker_a(
     timing["server"]["response_build_ms"] = response_build_ms
     timing["server"]["total_ms"] = total_server_ms
 
-    # ── Write metrics ─────────────────────────────────────────────
     log_metrics(
         session_id = session_id,
         endpoint   = "speaker_a",
@@ -752,13 +953,22 @@ async def translate_speaker_a(
 async def translate_speaker_b(
     audio:      UploadFile = File(...),
     session_id: str        = Form(...),
+    bg_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     """Turn-by-turn: process only Speaker B's audio."""
+    import hashlib
     server_start = int(time.time() * 1000)
 
     audio_bytes = await audio.read()
     ext = audio.filename.rsplit(".", 1)[-1].lower() if audio.filename else "wav"
     pipeline, session_load_ms, pipeline_build_ms = _get_or_create_session(session_id)
+    
+    s = load_session(session_id) or {}
+    is_durable = s.get("is_durable", False)
+    durable_uid = s.get("durable_user_id")
+    
+    turn_id = f"spb_{uuid.uuid4().hex[:8]}"
+    fp = hashlib.sha256(audio_bytes).hexdigest()
 
     try:
         speaker_result = await pipeline.process_speaker_b(audio_bytes, audio_format=ext)
@@ -771,11 +981,19 @@ async def translate_speaker_b(
     state_save_ms = int(time.time() * 1000) - state_start
 
     if speaker_result.buffered:
+        if is_durable and durable_uid:
+            from web.services import conversation_service as cs_mod
+            import asyncio
+            try:
+                await asyncio.to_thread(cs_mod.conv_svc.reserve_turn_sync, durable_uid, session_id, turn_id, "b", fp)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Reserve fail: {e}")
+            save_session(session_id, pending_turn_id_b=turn_id)
         return JSONResponse({"status": "buffered", "message": "Waiting for Speaker A language detection"})
 
     result = speaker_result.result
 
-    # ── Measure log_translation ──────────────────────────────────
     log_start = int(time.time() * 1000)
     log_translation(
         session_id = session_id,
@@ -786,10 +1004,8 @@ async def translate_speaker_b(
         char_count = len(result.source_transcript),
     )
     log_write_ms = int(time.time() * 1000) - log_start
-
-    # ── Build response with timing ───────────────────────────────
+    
     resp_start = int(time.time() * 1000)
-
     server_timing = {
         "total_ms":          0,
         "session_load_ms":   session_load_ms,
@@ -810,6 +1026,24 @@ async def translate_speaker_b(
         "total_latency_ms": result.total_latency_ms,
         "timing":           timing,
     }
+    
+    if is_durable and durable_uid:
+        import asyncio
+        async def _persist_spb():
+            try:
+                from web.services import conversation_service as cs_mod
+                _, is_new = await asyncio.to_thread(cs_mod.conv_svc.reserve_turn_sync, durable_uid, session_id, turn_id, "b", fp)
+                if not is_new: return
+                src = result.src_language or ""
+                if src and src != "auto":
+                    try: await asyncio.to_thread(cs_mod.conv_svc.update_asr_sync, durable_uid, turn_id, result.source_transcript, src)
+                    except ValueError: pass
+                trans_doc = {"translated_text": result.translated_text, "tgt_language": result.tgt_language}
+                await asyncio.to_thread(cs_mod.conv_svc.complete_turn_sync, durable_uid, turn_id, session_id, trans_doc, None)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"[_persist_spb] failed: {e}")
+        bg_tasks.add_task(_persist_spb)
 
     # If Speaker A had a buffered transcript, include the deferred result
     if speaker_result.deferred_result:
@@ -837,14 +1071,23 @@ async def translate_speaker_b(
             latency_ms = dr.total_latency_ms,
             char_count = len(dr.source_transcript),
         )
-        log_metrics(
-            session_id = session_id,
-            endpoint   = "speaker_a_deferred",
-            timing     = dr_timing,
-            src_lang   = dr.src_language,
-            tgt_lang   = dr.tgt_language,
-            char_count = len(dr.source_transcript),
-        )
+        
+        deferred_turn_id = s.get("pending_turn_id_a")
+        if is_durable and durable_uid and deferred_turn_id:
+            import asyncio
+            async def _persist_deferred_spa():
+                try:
+                    from web.services import conversation_service as cs_mod
+                    src = dr.src_language or ""
+                    if src and src != "auto":
+                        try: await asyncio.to_thread(cs_mod.conv_svc.update_asr_sync, durable_uid, deferred_turn_id, dr.source_transcript, src)
+                        except ValueError: pass
+                    trans_doc = {"translated_text": dr.translated_text, "tgt_language": dr.tgt_language}
+                    await asyncio.to_thread(cs_mod.conv_svc.complete_turn_sync, durable_uid, deferred_turn_id, session_id, trans_doc, None)
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error(f"[_persist_deferred_spa] failed: {e}")
+            bg_tasks.add_task(_persist_deferred_spa)
 
     response_build_ms = int(time.time() * 1000) - resp_start
     total_server_ms = int(time.time() * 1000) - server_start
@@ -852,7 +1095,6 @@ async def translate_speaker_b(
     timing["server"]["response_build_ms"] = response_build_ms
     timing["server"]["total_ms"] = total_server_ms
 
-    # ── Write metrics ─────────────────────────────────────────────
     log_metrics(
         session_id = session_id,
         endpoint   = "speaker_b",
@@ -964,53 +1206,101 @@ def _save_detected_language(session_id: str, speaker: str, language: str) -> Non
 async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
     """
     Live ASR WebSocket endpoint — one connection owner per (session_id, speaker).
-
-    Invariants:
-      - One LiveConnectionOwner registered per key (duplicate → 4409 close).
-      - One browser writer task; transcript reader and NMT/TTS never send directly.
-      - Every outbound message carries turn_id.
-      - audio_end and turn_error are mutually exclusive terminal events.
-      - On disconnect/cancel, owner.release() closes adapter and removes lease.
     """
     if speaker not in ("a", "b"):
         await websocket.close(code=1003, reason="speaker must be 'a' or 'b'")
         return
 
-    await websocket.accept()
+    token = None
+    if "sec-websocket-protocol" in websocket.headers:
+        protocols = websocket.headers.get("sec-websocket-protocol", "").split(",")
+        for p in protocols:
+            p = p.strip()
+            if p.startswith("token-"):
+                token = p[len("token-"):]
+                break
+
+    if token:
+        try:
+            from web.auth import get_current_user
+            await get_current_user(token)
+            await websocket.accept(subprotocol=f"token-{token}")
+        except Exception:
+            await websocket.close(code=1008, reason="Authentication failed")
+            return
+    else:
+        await websocket.accept()
     other_speaker = "b" if speaker == "a" else "a"
     print(f"[WS/ASR] Accepted: session={session_id} speaker={speaker}")
 
-    # ── Load session config (required before accepting a turn) ────────────
     state = load_session(session_id)
     if state is None:
         await websocket.send_json({
             "type":    MSG_TURN_ERROR,
             "turn_id": None,
-            "code":    TurnErrorCode.SESSION_NOT_FOUND,
-            "message": "Session not found. Please refresh and start a new session.",
-            "retryable": False,
+            "code":    TurnErrorCode.UPSTREAM_RECONNECT_FAILED,
+            "message": "Session not found",
+            "retry":   False,
         })
-        await websocket.close(code=WSCloseCode.POLICY_VIOLATION, reason="SESSION_NOT_FOUND")
+        await websocket.close(code=4404, reason="session_not_found")
         return
 
-    # ── Retrieve previously detected language for this speaker ────────────
-    detected_lang = ""
+    durable_uid = None
+    if token:
+        try:
+            from web.auth import get_current_user
+            u = await get_current_user(token)
+            durable_uid = u.user_id
+        except Exception:
+            pass
+    if not durable_uid:
+        durable_uid = state.get("durable_user_id")
+
+    persist_queue = asyncio.Queue()
+    
+    async def persist_queue_worker(q: asyncio.Queue):
+        from web.services import conversation_service as cs_mod
+        while True:
+            msg = await q.get()
+            if msg is None:
+                q.task_done()
+                break
+            try:
+                op = msg.get("op")
+                tid = msg.get("turn_id")
+                if op == "reserve":
+                    await asyncio.to_thread(cs_mod.conv_svc.reserve_turn_sync, durable_uid, session_id, tid, speaker, msg.get("fp"))
+                elif op == "update_asr":
+                    src = msg.get("src") or ""
+                    if src and src != "auto":
+                        try: await asyncio.to_thread(cs_mod.conv_svc.update_asr_sync, durable_uid, tid, msg.get("text"), src)
+                        except ValueError: pass
+                elif op == "complete":
+                    await asyncio.to_thread(cs_mod.conv_svc.complete_turn_sync, durable_uid, tid, session_id, msg.get("trans_doc"), None)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"[WS Persist] Error: {e}")
+            finally:
+                q.task_done()
+
+    persist_worker_task = asyncio.create_task(
+        persist_queue_worker(persist_queue), name=f"ws-persist:{session_id}:{speaker}"
+    )
+
     if _redis:
-        detected_lang = _redis.get(redis_asr_lang_key(session_id, speaker)) or ""
+        detected_lang = _redis.get(f"asr:lang:{speaker}:{session_id}")
+        if detected_lang:
+            detected_lang = detected_lang.decode("utf-8")
     else:
         detected_lang = _local_sessions.get(f"__asr_lang_{speaker}_{session_id}", "")
 
-    # ── Create a fresh adapter for this connection ────────────────────────
     adapter = SarvamLiveASRAdapter(API_KEY)
     await adapter.start_session(language_hint=detected_lang or "")
 
-    # ── Acquire connection ownership (Redis lease + process registry) ──────
     owner = await acquire_connection(session_id, speaker, websocket, adapter, redis=_redis)
     if owner is None:
-        # acquire_connection already closed the websocket with 4409
         return
 
-    # ── Send server_ready ─────────────────────────────────────────────────
     await owner.enqueue({
         "type":             MSG_SERVER_READY,
         "protocol_version": PROTOCOL_VERSION,
@@ -1021,13 +1311,11 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
         "sample_rate_hz":   16_000,
     })
 
-    # ── Turn state ────────────────────────────────────────────────────────
     active_turn_id: str | None = None
     turn_lock     = asyncio.Lock()
     terminal_sent = False
 
     async def _release_active_turn(turn_id: str) -> None:
-        """Clear local ownership and release the cross-speaker session slot."""
         nonlocal active_turn_id
         async with turn_lock:
             if active_turn_id == turn_id:
@@ -1047,8 +1335,6 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
             return "en-IN"
         return s.get(f"lang_{other_speaker}") or "en-IN"
 
-    # ── Turn pipeline (NMT + TTS) — isolated asyncio task ────────────────
-
     async def run_turn_pipeline(turn_id: str, final_text: str, src_lang: str) -> None:
         nonlocal terminal_sent
         try:
@@ -1060,6 +1346,15 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
                 src_language = src_lang or "auto",
                 tgt_language = tgt_lang,
             )
+            
+            if durable_uid:
+                persist_queue.put_nowait({
+                    "op": "update_asr",
+                    "turn_id": turn_id,
+                    "text": final_text,
+                    "src": src_lang
+                })
+
             chunk_count = 0
             async for audio_chunk in pipeline.run_from_transcript(
                 transcript=final_text, src_language=src_lang or "auto",
@@ -1073,6 +1368,15 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
                     "data":           base64.b64encode(audio_chunk).decode(),
                 })
                 chunk_count += 1
+
+            if durable_uid and hasattr(pipeline, "last_nmt_output"):
+                trans_doc = {
+                    "translated_text": pipeline.last_nmt_output.translated_text,
+                    "tgt_language": tgt_lang
+                }
+                persist_queue.put_nowait({
+                    "op": "complete", "turn_id": turn_id, "trans_doc": trans_doc
+                })
 
             if not terminal_sent:
                 terminal_sent = True
@@ -1096,47 +1400,35 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
                     )
                 except Exception:
                     pass
-        finally:
-            await _release_active_turn(turn_id)
 
-    # ── Transcript reader — forwards frames to outbound queue ─────────────
-
-    async def transcript_reader() -> None:
-        nonlocal active_turn_id, terminal_sent
+    async def transcript_reader():
+        nonlocal terminal_sent
         try:
-            async for frame in adapter.listen_transcripts():
-                turn_id = active_turn_id
-                if turn_id is None:
-                    continue  # no active turn; stale frame
+            async for frame in adapter.receive_stream():
+                if owner.is_closed:
+                    break
+                
+                turn_id = owner.active_turn_id
+                if not turn_id:
+                    continue
+                
+                ftype = frame.get("type")
+                if ftype == "transcript_partial":
+                    text = frame.get("text", "")
+                    await owner.enqueue({
+                        "type":    MSG_TRANSCRIPT_PARTIAL,
+                        "turn_id": turn_id,
+                        "text":    text,
+                    })
+                    _push_transcript(session_id, speaker, text, is_partial=True)
 
-                if "_provider_error" in frame:
-                    err = frame["_provider_error"]
-                    if not terminal_sent:
-                        terminal_sent = True
-                        await owner.send_turn_error(
-                            turn_id,
-                            TurnErrorCode.UPSTREAM_RECONNECT_FAILED,
-                            f"Provider error: {err.get('message', '')}",
-                            retryable=False,
-                        )
-                    await _release_active_turn(turn_id)
-                    return
+                elif ftype == "transcript_final":
+                    text = frame.get("text", "")
+                    _push_transcript(session_id, speaker, text, is_partial=False)
 
-                text    = frame["transcript"]
-                lang    = frame["language"]
-                partial = frame["is_partial"]
-
-                if lang:
+                    lang = frame.get("detected_language")
                     _save_detected_language(session_id, speaker, lang)
 
-                if partial:
-                    await owner.enqueue({
-                        "type":          MSG_TRANSCRIPT_PARTIAL,
-                        "turn_id":       turn_id,
-                        "text":          text,
-                        "language_code": lang,
-                    })
-                else:
                     confidence = frame.get("language_confidence")
                     await owner.enqueue({
                         "type":                MSG_TRANSCRIPT_FINAL,
@@ -1200,7 +1492,6 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
         name=f"transcript-reader:{session_id}:{speaker}",
     )
 
-    # ── Main receive loop ─────────────────────────────────────────────────
     try:
         while True:
             msg = await websocket.receive()
@@ -1208,12 +1499,10 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
             if msg["type"] == "websocket.disconnect":
                 raise WebSocketDisconnect(msg.get("code", 1000))
 
-            # Binary frame: PCM audio chunk
             if msg.get("bytes"):
                 if active_turn_id is not None:
                     await adapter.stream_chunk(msg["bytes"])
 
-            # Text frame: control message
             elif msg.get("text"):
                 try:
                     ctrl = json.loads(msg["text"])
@@ -1226,10 +1515,8 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
                     new_turn_id = ctrl.get("turn_id")
                     if not new_turn_id:
                         new_turn_id = str(uuid.uuid4())
-                        print(f"[WS/ASR] WARN: missing turn_id — generated {new_turn_id} (legacy client)")
+                        print(f"[WS/ASR] WARN: missing turn_id - generated {new_turn_id} (legacy client)")
 
-                    # The two speaker sockets may both be connected, but only
-                    # one may own an active conversation turn at a time.
                     turn_acquired = await acquire_session_turn(
                         session_id,
                         speaker,
@@ -1263,6 +1550,10 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
                         owner.active_turn_id = new_turn_id
                         active_turn_id       = new_turn_id
                         terminal_sent        = False
+                        
+                    if durable_uid:
+                        persist_queue.put_nowait({"op": "reserve", "turn_id": new_turn_id, "fp": ""})
+                        
                     print(f"[WS/ASR] Turn started: {new_turn_id}")
 
                 elif msg_type == MSG_STOP_RECORDING:
@@ -1296,11 +1587,6 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
         if active_turn_id:
             await _release_active_turn(active_turn_id)
         await owner.release()
+        persist_queue.put_nowait(None)
         print(f"[WS/ASR] Handler done: {session_id}:{speaker}")
 
-
-# ── Run ───────────────────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("web.server:app", host="0.0.0.0", port=8000, reload=True)
