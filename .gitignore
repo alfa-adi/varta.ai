@@ -105,3 +105,12 @@ dmypy.json
 # Frontend (Vite + Node)
 frontend/node_modules/
 frontend/dist/
+
+# CPMS Project
+cpms/node_modules/
+cpms/dist/
+cpms/puppeteer_temp/
+
+# Scratch and Temporary
+scratch/
+temp_prompt.json
