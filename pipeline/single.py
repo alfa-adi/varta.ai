@@ -171,4 +171,4 @@ class SinglePipeline:
                 voice_gender = voice_gender,
             )
         ):
-            yield chunk
+            yield chunk

@@ -265,6 +265,8 @@ def mark_turn_failed_sync(
 ) -> None:
     """Update status to failed, but NEVER overwrite completed or cancelled."""
     db = get_db()
+    if db is None:
+        return
     db["translation_turns"].update_one(
         {
             "turn_id": turn_id,
