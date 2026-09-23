@@ -17,7 +17,6 @@ __pycache__/
 output.txt
 # benchmark datasets, test outputs, and one-off debug scripts
 test/
-tests/
 check_*.py
 debug_*.py
 dummy_*

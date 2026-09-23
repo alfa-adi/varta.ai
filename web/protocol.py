@@ -41,6 +41,7 @@ MSG_AUDIO_CHUNK         = "audio_chunk"
 MSG_AUDIO_END           = "audio_end"
 MSG_TURN_ERROR          = "turn_error"
 MSG_TURN_CANCELLED      = "turn_cancelled"
+MSG_TURN_PERSISTED      = "turn_persisted"
 
 # ── Audio format fields (carried on every audio_chunk message) ────────────────
 
