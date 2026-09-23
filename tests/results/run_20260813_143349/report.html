@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V2 WebSocket Reliability Report — ws_reliability_20260813_143326</title>
+<style>
+  :root {
+    --bg: #07101f; --surface: #0c1524; --border: #1a2840;
+    --accent: #3b82f6; --green: #22c55e; --amber: #f59e0b; --red: #ef4444;
+    --text: #e2e8f0; --muted: #64748b; --subtle: #94a3b8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif;
+          padding: 24px; font-size: 14px; }
+  h1 { font-size: 24px; margin-bottom: 4px; }
+  h2 { font-size: 16px; color: var(--subtle); margin: 28px 0 12px; border-bottom: 1px solid var(--border);
+        padding-bottom: 6px; }
+  .meta { color: var(--muted); font-size: 12px; margin-bottom: 24px; }
+  .cards { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+           padding: 16px 24px; min-width: 160px; }
+  .card-label { font-size: 11px; color: var(--muted); text-transform: uppercase;
+                 letter-spacing: .5px; margin-bottom: 6px; }
+  .card-val { font-size: 32px; font-weight: 800; }
+  table { width: 100%; border-collapse: collapse; background: var(--surface);
+           border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 24px; }
+  th { background: #0a1422; padding: 10px 12px; font-size: 11px; text-align: left;
+        color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  td { padding: 8px 12px; font-size: 12px; border-top: 1px solid var(--border); }
+  tr:hover td { background: #0f1a2e; }
+  .note { background: #0c1829; border: 1px solid #1a2840; border-radius: 8px;
+           padding: 12px 16px; font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+</style>
+</head>
+<body>
+<h1>🛡️ V2 WebSocket Reliability + Latency Report</h1>
+<div class="meta">
+  Run: <strong>ws_reliability_20260813_143326</strong> &nbsp;|&nbsp;
+  Started: 2026-08-13 14:33:26 &nbsp;|&nbsp;
+  Duration: ~0 min &nbsp;|&nbsp;
+  Run ID: <code>2bab7f14-100f-46a1-bf5e-1f208f140943</code>
+</div>
+
+<div class="note">
+  ⓘ <strong>What "Clean Success" means here:</strong>
+  ASR transcript received → audio_chunk(s) received → audio_end received → received PCM is decodable.
+  Actual speaker playback cannot be verified from a Python test runner (requires a real browser AudioContext).
+</div>
+
+<div class="cards">
+  <div class="card">
+    <div class="card-label">Total Turns</div>
+    <div class="card-val">1</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Clean Success</div>
+    <div class="card-val" style="color:var(--green)">0</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Partial</div>
+    <div class="card-val" style="color:var(--amber)">0</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Failures</div>
+    <div class="card-val" style="color:var(--red)">1</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Clean Reliability</div>
+    <div class="card-val" style="color:#ef4444">0.0%</div>
+  </div>
+  <div class="card">
+    <div class="card-label">User-Visible Success</div>
+    <div class="card-val" style="color:#ef4444">0.0%</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Pipeline Success</div>
+    <div class="card-val" style="color:#22c55e">100.0%</div>
+  </div>
+</div>
+
+<h2>🌐 Per-Language Breakdown</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Language</th><th>Turns</th><th>Reliability</th><th>Pipeline OK</th>
+      <th>✅ Clean</th><th>⚠️ Partial</th><th>❌ Failed</th>
+      <th>Median E2E</th><th>Median ASR</th><th>Median Pipe</th><th>Primary Failure</th>
+    </tr>
+  </thead>
+  <tbody>
+        <tr>
+            <td><strong>bn-IN</strong></td>
+            <td>1</td>
+            <td style="color:#ef4444;font-weight:700">0.0%</td>
+            <td style="color:#22c55e">100.0%</td>
+            <td>0</td>
+            <td>0</td>
+            <td>1</td>
+            <td>21,722ms</td>
+            <td>4,768ms</td>
+            <td>—</td>
+            <td>NMT_TTS</td>
+        </tr></tbody>
+</table>
+
+<h2>📊 Stage Latency Statistics</h2>
+<table>
+  <thead>
+    <tr><th>Stage</th><th>Min</th><th>Mean</th><th>Median</th><th>P95</th><th>P99</th><th>Max</th></tr>
+  </thead>
+  <tbody><tr><td>End-to-End</td><td>21,722ms</td><td>21,722ms</td><td>21,722ms</td><td>21,722ms</td><td>21,722ms</td><td>21,722ms</td></tr><tr><td>ASR (stop→final)</td><td>4,768ms</td><td>4,768ms</td><td>4,768ms</td><td>4,768ms</td><td>4,768ms</td><td>4,768ms</td></tr><tr><td>Pipeline NMT+TTS</td><td colspan=6 style='color:#6b7280'>NOT AVAILABLE</td></tr><tr><td>Audio Delivery</td><td colspan=6 style='color:#6b7280'>NOT AVAILABLE</td></tr><tr><td>PCM Send</td><td>16,357ms</td><td>16,357ms</td><td>16,357ms</td><td>16,357ms</td><td>16,357ms</td><td>16,357ms</td></tr></tbody>
+</table>
+
+<h2>📈 Persistent Session Analysis (Latency by Turn Number)</h2>
+<p style="color:var(--muted);font-size:12px;margin-bottom:10px">
+  Each WebSocket connection serves 10 turns. This table shows whether latency or reliability
+  degrades as the connection ages.
+</p>
+<table>
+  <thead>
+    <tr><th>Turn #</th><th>Conversations</th><th>Success Rate</th><th>Median E2E</th><th>P95 E2E</th></tr>
+  </thead>
+  <tbody><tr><td>Turn 1</td><td>1</td><td style='color:#ef4444'>0%</td><td>21,722ms</td><td>21,722ms</td></tr></tbody>
+</table>
+
+<h2>🔥 Failure Taxonomy</h2>
+<table>
+  <thead><tr><th>Stage</th><th>Count</th></tr></thead>
+  <tbody><tr><td>Nmt Tts</td><td>1</td></tr></tbody>
+</table>
+
+<h2>📋 Turn-by-Turn Event Log</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Turn</th><th>Src Lang</th><th>Detected</th><th>Status</th>
+      <th>ASR ms</th><th>Pipeline ms</th><th>E2E ms</th><th>Audio Bytes</th><th>Error</th>
+    </tr>
+  </thead>
+  <tbody><tr><td>1</td><td>bn-IN</td><td>bn-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>4,768ms</td><td>—</td><td>21,722ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr></tbody>
+</table>
+
+<p style="color:var(--muted);font-size:11px;margin-top:20px">
+  Generated by varta.ai V2 WebSocket Reliability Test Runner · 2026-08-13 14:33:49
+</p>
+</body>
+</html>

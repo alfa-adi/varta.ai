@@ -160,6 +160,8 @@ class SinglePipeline:
             )
         )
         self.last_nmt_output = nmt_output
+        if on_nmt_complete is not None:
+            on_nmt_complete(nmt_output)
 
         # ── Step 2: TTS streaming — yield chunks as they arrive ───────
         # synthesise_streaming() is an async generator that yields each
@@ -171,4 +173,4 @@ class SinglePipeline:
                 voice_gender = voice_gender,
             )
         ):
-            yield chunk
+            yield chunk

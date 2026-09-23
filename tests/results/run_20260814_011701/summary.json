@@ -1,0 +1,111 @@
+{
+  "run_id": "dab75aa0-a81f-4f40-8acf-3eb0147b6118",
+  "run_label": "ws_reliability_20260814_011643",
+  "started_at": 1786650403.3036447,
+  "finished_at": 1786650421.181665,
+  "config": {
+    "target_url": "ws://localhost:8000",
+    "n_conversations": 1,
+    "turns_per_convo": 3,
+    "target_language": "hi-IN",
+    "inter_turn_delay_sec": 7.0,
+    "inter_convo_delay_sec": 5.0,
+    "languages": [
+      "bn"
+    ]
+  },
+  "total_turns": 3,
+  "clean_successes": 0,
+  "partial_successes": 0,
+  "failures": 3,
+  "not_run": 0,
+  "clean_reliability_pct": 0.0,
+  "user_visible_success_pct": 0.0,
+  "pipeline_success_pct": 0.0,
+  "failure_breakdown": {
+    "connection": 2,
+    "fixture": 0,
+    "send": 1,
+    "asr": 0,
+    "nmt_tts": 0,
+    "receive": 0,
+    "decode": 0,
+    "timeout": 0,
+    "unknown": 0
+  },
+  "latency_stats": {
+    "e2e": {
+      "count": 0,
+      "available": false
+    },
+    "asr": {
+      "count": 0,
+      "available": false
+    },
+    "pipeline_nmt_tts": {
+      "count": 0,
+      "available": false
+    },
+    "audio_delivery": {
+      "count": 0,
+      "available": false
+    },
+    "send": {
+      "available": true,
+      "count": 1,
+      "min": 361,
+      "mean": 361.0,
+      "median": 361,
+      "p95": 361,
+      "p99": 361,
+      "max": 361
+    }
+  },
+  "latency_by_turn": {
+    "1": {
+      "turn": 1,
+      "count": 0,
+      "success_count": 0,
+      "available": false
+    },
+    "2": {
+      "turn": 2,
+      "count": 0,
+      "success_count": 0,
+      "available": false
+    },
+    "3": {
+      "turn": 3,
+      "count": 0,
+      "success_count": 0,
+      "available": false
+    }
+  },
+  "conversations": [
+    {
+      "language": "bn-IN",
+      "session_id": "8a4f26e5-2580-404f-bf2a-12b93d54cf79",
+      "conversation_id": "conv_bn_001_dab75aa0",
+      "ws_connect_latency_ms": 2158,
+      "total_turns": 3,
+      "clean_successes": 0,
+      "partial_successes": 0,
+      "failures": 3,
+      "not_run": 0,
+      "reliability_pct": 0.0,
+      "pipeline_success_pct": 0.0,
+      "median_e2e_latency_ms": null,
+      "p95_e2e_latency_ms": null,
+      "median_asr_latency_ms": null,
+      "median_pipeline_latency_ms": null,
+      "primary_failure_stage": "CONNECTION",
+      "ws_disconnects": 2,
+      "asr_failures": 0,
+      "nmt_tts_failures": 0,
+      "receive_failures": 0,
+      "decode_failures": 0,
+      "timeout_failures": 0,
+      "fixture_failures": 0
+    }
+  ]
+}

@@ -59,6 +59,7 @@ from web.connection_manager import (
     acquire_session_turn,
     release_session_turn,
 )
+import logging
 from web.protocol import (
     AUDIO_CHANNELS,
     AUDIO_FORMAT,
@@ -156,6 +157,22 @@ from slowapi.util import get_remote_address
 limiter = Limiter(key_func=get_remote_address, default_limits=["15/minute"])
 
 app = FastAPI(title="Sarvam Translation PoC", version="0.1.0")
+
+from web.storage.mongo import (
+    init_mongo as _conv_init_mongo,
+    check_readiness as _conv_check_readiness,
+    is_ready as _conv_store_ready,
+    is_enabled as _conv_store_enabled,
+)
+
+@app.on_event("startup")
+async def _startup_persistence() -> None:
+    _conv_init_mongo(MONGO_URL)
+    _conv_check_readiness()
+    if _conv_store_ready():
+        print("[INFO] Conversation persistence ready")
+    else:
+        print("[INFO] Conversation persistence disabled or unavailable")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
@@ -191,8 +208,10 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 # Sentinel — module-level; do NOT export.
 _UNSET = object()
 
+_UNSET = object()
+
 def save_session(
-    session_id:  str,
+    session_id: str,
     lang_a,
     lang_b,
     pending_a=None,
@@ -204,39 +223,34 @@ def save_session(
     durable_customer_id=_UNSET,
     durable_session_id=_UNSET,
 ):
-    if _redis is None:
-        _local_sessions[session_id] = {
-            "lang_a": lang_a,
-            "lang_b": lang_b,
-            "pending_transcript_a": pending_a,
-            "pending_transcript_b": pending_b,
-        }
-        return
-
-    # Load existing to retain durable identity fields (lost-update race is an accepted limitation)
     existing = load_session(session_id) or {}
-    
-    # Resolve pending turns (legacy positional vs explicit kwargs)
-    val_a = pending_a if pending_a is not None else existing.get("pending_transcript_a")
-    if pending_turn_id_a is not _UNSET:
-        val_a = pending_turn_id_a
 
-    val_b = pending_b if pending_b is not None else existing.get("pending_transcript_b")
-    if pending_turn_id_b is not _UNSET:
-        val_b = pending_turn_id_b
+    def _merge(kwarg, key, default=None):
+        if kwarg is _UNSET:
+            return existing.get(key, default)
+        return kwarg
 
-    data = {
+    payload = {
         "lang_a": lang_a,
         "lang_b": lang_b,
-        "pending_transcript_a": val_a or "",
-        "pending_transcript_b": val_b or "",
-        "is_durable": existing.get("is_durable", False) if is_durable is _UNSET else is_durable,
-        "durable_user_id": existing.get("durable_user_id") if durable_user_id is _UNSET else durable_user_id,
-        "durable_customer_id": existing.get("durable_customer_id") if durable_customer_id is _UNSET else durable_customer_id,
-        "durable_session_id": existing.get("durable_session_id") if durable_session_id is _UNSET else durable_session_id,
+        "pending_transcript_a": pending_a,
+        "pending_transcript_b": pending_b,
+        "pending_turn_id_a": _merge(pending_turn_id_a, "pending_turn_id_a"),
+        "pending_turn_id_b": _merge(pending_turn_id_b, "pending_turn_id_b"),
+        "is_durable": _merge(is_durable, "is_durable", False),
+        "durable_user_id": _merge(durable_user_id, "durable_user_id"),
+        "durable_customer_id": _merge(durable_customer_id, "durable_customer_id"),
+        "durable_session_id": _merge(durable_session_id, "durable_session_id"),
     }
-    _redis.setex(f"session:{session_id}", SESSION_TTL, json.dumps(data))
 
+    if payload.get("is_durable") and _redis is None:
+        raise RuntimeError("Durable session snapshot requires Redis")
+
+    data = json.dumps(payload)
+    if _redis:
+        _redis.setex(f"session:{session_id}", SESSION_TTL, data)
+    else:
+        _local_sessions[session_id] = json.loads(data)
 
 
 def load_session(session_id: str):
@@ -481,36 +495,41 @@ from web.auth import get_current_user, AuthenticatedUser
 @app.post("/session/create_durable")
 async def create_durable_session(
     customer_id: str = Form(...),
-    token_payload: AuthenticatedUser = Depends(get_current_user)
+    lang_a: str = Form(default=""),
+    lang_b: str = Form(default=""),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
+    if not _conv_store_enabled() or not _conv_store_ready():
+        raise HTTPException(503, "Durable persistence is not available")
     if _redis is None:
         raise HTTPException(503, "Durable sessions require Redis")
-        
+
     session_id = str(uuid.uuid4())
-    user_id = token_payload.user_id
-    
-    # 1. Write ledger entry to Mongo inline (fail closed)
-    from web.services import conversation_service as cs_mod
     try:
         await asyncio.to_thread(
             cs_mod.conv_svc.create_session_doc_sync,
-            user_id, session_id, customer_id
+            current_user.user_id,
+            session_id,
+            customer_id,
         )
     except Exception as exc:
-        import logging
-        logging.getLogger(__name__).error(f"[Persist] create_durable failed Mongo insert: {exc}")
+        logging.getLogger(__name__).error("[Persist] create_durable Mongo insert: %s", exc)
         raise HTTPException(500, "Could not initialize durable session")
-        
-    # 2. Write runtime state to Redis
+
     save_session(
         session_id,
-        "hi-IN", "en-IN",  # Defaults, overridden by first WS
+        lang_a or None,
+        lang_b or None,
         is_durable=True,
-        durable_user_id=user_id,
+        durable_user_id=current_user.user_id,
         durable_customer_id=customer_id,
-        durable_session_id=session_id
+        durable_session_id=session_id,
     )
-    return {"session_id": session_id}
+    return JSONResponse({
+        "session_id": session_id,
+        "is_durable": True,
+        "customer_id": customer_id,
+    })
 
 @app.post("/session/create")
 async def create_session(
@@ -829,7 +848,13 @@ async def translate_speaker_a(
             except Exception as e:
                 import logging
                 logging.getLogger(__name__).error(f"Reserve fail: {e}")
-            save_session(session_id, pending_turn_id_a=turn_id)
+        st = load_session(session_id) or {}
+        save_session(
+            session_id,
+            st.get("lang_a"), st.get("lang_b"),
+            st.get("pending_transcript_a"), st.get("pending_transcript_b"),
+            pending_turn_id_a=turn_id,
+        )
         return JSONResponse({"status": "buffered", "message": "Waiting for Speaker B language detection"})
 
     result = speaker_result.result
@@ -989,7 +1014,13 @@ async def translate_speaker_b(
             except Exception as e:
                 import logging
                 logging.getLogger(__name__).error(f"Reserve fail: {e}")
-            save_session(session_id, pending_turn_id_b=turn_id)
+        st = load_session(session_id) or {}
+        save_session(
+            session_id,
+            st.get("lang_a"), st.get("lang_b"),
+            st.get("pending_transcript_a"), st.get("pending_transcript_b"),
+            pending_turn_id_b=turn_id,
+        )
         return JSONResponse({"status": "buffered", "message": "Waiting for Speaker A language detection"})
 
     result = speaker_result.result
@@ -1202,7 +1233,72 @@ def _save_detected_language(session_id: str, speaker: str, language: str) -> Non
 
 # ── WebSocket: Live ASR relay ─────────────────────────────────────────────────
 
+async def persist_queue_worker(
+    queue: asyncio.Queue,
+    *,
+    user_id: str,
+    session_id: str,
+    speaker: str,
+    conv_svc,
+    owner,
+) -> None:
+    """Serial reserve → asr → complete|fail. Sentinel None drains. Do not cancel from WS finally."""
+    failed_reserve: set[str] = set()
+    while True:
+        item = await queue.get()
+        try:
+            if item is None:
+                break
+            op = item.get("op")
+            tid = item.get("turn_id")
+            if op == "reserve":
+                try:
+                    await asyncio.to_thread(
+                        conv_svc.reserve_turn_sync,
+                        user_id, session_id, tid, speaker, item.get("fp"),
+                    )
+                except Exception as exc:
+                    logging.getLogger(__name__).error("[WS Persist] reserve %s: %s", tid, exc)
+                    failed_reserve.add(tid)
+                    if owner is not None and not owner._closed:
+                        await owner.enqueue({
+                            "type": MSG_TURN_PERSISTED, "turn_id": tid,
+                            "status": "persist_failed", "error": str(exc),
+                        })
+            elif op == "update_asr":
+                if tid in failed_reserve:
+                    continue
+                src = item.get("src") or ""
+                if src and src != "auto":
+                    try:
+                        await asyncio.to_thread(
+                            conv_svc.update_asr_sync, user_id, tid, item.get("text"), src,
+                        )
+                    except Exception as exc:
+                        logging.getLogger(__name__).warning("[WS Persist] asr %s: %s", tid, exc)
+            elif op == "complete":
+                if tid in failed_reserve:
+                    continue
+                await asyncio.to_thread(
+                    conv_svc.complete_turn_sync,
+                    user_id, tid, session_id, item.get("trans_doc"), None,
+                )
+                if owner is not None and not owner._closed:
+                    await owner.enqueue({
+                        "type": MSG_TURN_PERSISTED, "turn_id": tid, "status": "completed",
+                    })
+            elif op == "fail":
+                if tid not in failed_reserve:
+                    await asyncio.to_thread(
+                        conv_svc.mark_turn_failed_sync, user_id, tid, item.get("error", ""),
+                    )
+        except Exception as exc:
+            logging.getLogger(__name__).error("[WS Persist] %s", exc)
+        finally:
+            queue.task_done()
+
 @app.websocket("/ws/asr/{session_id}/{speaker}")
+
 async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
     """
     Live ASR WebSocket endpoint — one connection owner per (session_id, speaker).
@@ -1211,23 +1307,23 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
         await websocket.close(code=1003, reason="speaker must be 'a' or 'b'")
         return
 
-    token = None
-    if "sec-websocket-protocol" in websocket.headers:
-        protocols = websocket.headers.get("sec-websocket-protocol", "").split(",")
-        for p in protocols:
-            p = p.strip()
-            if p.startswith("token-"):
-                token = p[len("token-"):]
-                break
+    from web.auth import authenticate_websocket
+    raw_protocols = websocket.headers.get("sec-websocket-protocol", "")
+    s = load_session(session_id) or {}
+    is_durable = s.get("is_durable", False)
+    durable_uid = s.get("durable_user_id")
 
-    if token:
-        try:
-            from web.auth import get_current_user
-            await get_current_user(token)
-            await websocket.accept(subprotocol=f"token-{token}")
-        except Exception:
-            await websocket.close(code=1008, reason="Authentication failed")
+    user, selected_proto = await authenticate_websocket(raw_protocols)
+    
+    if is_durable:
+        if user is None or user.user_id != durable_uid:
+            from fastapi.websockets import WebSocketState
+            if websocket.client_state == WebSocketState.CONNECTING:
+                await websocket.close(code=1008, reason="UNAUTHORIZED")
             return
+            
+    if selected_proto:
+        await websocket.accept(subprotocol=selected_proto)
     else:
         await websocket.accept()
     other_speaker = "b" if speaker == "a" else "a"
@@ -1297,9 +1393,27 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
     adapter = SarvamLiveASRAdapter(API_KEY)
     await adapter.start_session(language_hint=detected_lang or "")
 
+    persist_queue = None
+    persist_worker_task = None
+
     owner = await acquire_connection(session_id, speaker, websocket, adapter, redis=_redis)
     if owner is None:
         return
+
+    if is_durable and durable_uid and _conv_store_ready():
+        persist_queue = asyncio.Queue()
+        from web.services import conversation_service as cs_mod
+        persist_worker_task = asyncio.create_task(
+            persist_queue_worker(
+                persist_queue,
+                user_id=durable_uid,
+                session_id=session_id,
+                speaker=speaker,
+                conv_svc=cs_mod.conv_svc,
+                owner=owner,
+            ),
+            name=f"ws-persist:{session_id}:{speaker}",
+        )
 
     await owner.enqueue({
         "type":             MSG_SERVER_READY,
@@ -1347,7 +1461,7 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
                 tgt_language = tgt_lang,
             )
             
-            if durable_uid:
+            if persist_queue is not None:
                 persist_queue.put_nowait({
                     "op": "update_asr",
                     "turn_id": turn_id,
@@ -1369,7 +1483,7 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
                 })
                 chunk_count += 1
 
-            if durable_uid and hasattr(pipeline, "last_nmt_output"):
+            if persist_queue is not None and hasattr(pipeline, "last_nmt_output"):
                 trans_doc = {
                     "translated_text": pipeline.last_nmt_output.translated_text,
                     "tgt_language": tgt_lang
@@ -1383,7 +1497,9 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
                 await owner.send_audio_end(turn_id, reason="completed")
                 print(f"[WS/ASR] turn={turn_id} audio_end chunks={chunk_count}")
 
-        except asyncio.CancelledError:
+        except asyncio.CancelledError as exc:
+            if persist_queue is not None:
+                persist_queue.put_nowait({"op": "fail", "turn_id": turn_id, "error": str(exc)})
             if not terminal_sent:
                 terminal_sent = True
                 try:
@@ -1391,6 +1507,8 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
                 except Exception:
                     pass
         except Exception as exc:
+            if persist_queue is not None:
+                persist_queue.put_nowait({"op": "fail", "turn_id": turn_id, "error": str(exc)})
             print(f"[WS/ASR] Pipeline error turn={turn_id}: {exc}")
             if not terminal_sent:
                 terminal_sent = True
@@ -1551,8 +1669,8 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
                         active_turn_id       = new_turn_id
                         terminal_sent        = False
                         
-                    if durable_uid:
-                        persist_queue.put_nowait({"op": "reserve", "turn_id": new_turn_id, "fp": ""})
+                    if persist_queue is not None:
+                        persist_queue.put_nowait({"op": "reserve", "turn_id": new_turn_id, "fp": None})
                         
                     print(f"[WS/ASR] Turn started: {new_turn_id}")
 
@@ -1586,7 +1704,12 @@ async def ws_asr_live(websocket: WebSocket, session_id: str, speaker: str):
             pass
         if active_turn_id:
             await _release_active_turn(active_turn_id)
+
+        if persist_queue is not None:
+            persist_queue.put_nowait(None)
+            if persist_worker_task is not None:
+                done, _ = await asyncio.wait({persist_worker_task}, timeout=5.0)
+
         await owner.release()
-        persist_queue.put_nowait(None)
         print(f"[WS/ASR] Handler done: {session_id}:{speaker}")
 

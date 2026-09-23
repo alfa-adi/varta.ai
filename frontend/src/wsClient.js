@@ -96,7 +96,7 @@ export class LiveWS {
    * Returns the shared openPromise so concurrent calls coalesce.
    * @returns {Promise<void>}
    */
-  async open() {
+  async open(token = null) {
     if (this._state === ConnState.OPEN)       return;
     if (this._state === ConnState.CONNECTING) return this._openPromise;
 
@@ -126,7 +126,8 @@ export class LiveWS {
     }, OPEN_TIMEOUT_MS);
 
     // ── Construct socket ──────────────────────────────────────────────────
-    this._ws = new WebSocket(url);
+    const protocols = token ? [`token-${token}`] : [];
+    this._ws = new WebSocket(url, protocols);
     this._attachHandlers(gen, resolveOpen, rejectOpen);
 
     return this._openPromise;

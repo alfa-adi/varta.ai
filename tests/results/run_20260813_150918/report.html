@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V2 WebSocket Reliability Report — ws_reliability_20260813_143625</title>
+<style>
+  :root {
+    --bg: #07101f; --surface: #0c1524; --border: #1a2840;
+    --accent: #3b82f6; --green: #22c55e; --amber: #f59e0b; --red: #ef4444;
+    --text: #e2e8f0; --muted: #64748b; --subtle: #94a3b8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif;
+          padding: 24px; font-size: 14px; }
+  h1 { font-size: 24px; margin-bottom: 4px; }
+  h2 { font-size: 16px; color: var(--subtle); margin: 28px 0 12px; border-bottom: 1px solid var(--border);
+        padding-bottom: 6px; }
+  .meta { color: var(--muted); font-size: 12px; margin-bottom: 24px; }
+  .cards { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+           padding: 16px 24px; min-width: 160px; }
+  .card-label { font-size: 11px; color: var(--muted); text-transform: uppercase;
+                 letter-spacing: .5px; margin-bottom: 6px; }
+  .card-val { font-size: 32px; font-weight: 800; }
+  table { width: 100%; border-collapse: collapse; background: var(--surface);
+           border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 24px; }
+  th { background: #0a1422; padding: 10px 12px; font-size: 11px; text-align: left;
+        color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  td { padding: 8px 12px; font-size: 12px; border-top: 1px solid var(--border); }
+  tr:hover td { background: #0f1a2e; }
+  .note { background: #0c1829; border: 1px solid #1a2840; border-radius: 8px;
+           padding: 12px 16px; font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+</style>
+</head>
+<body>
+<h1>🛡️ V2 WebSocket Reliability + Latency Report</h1>
+<div class="meta">
+  Run: <strong>ws_reliability_20260813_143625</strong> &nbsp;|&nbsp;
+  Started: 2026-08-13 14:36:25 &nbsp;|&nbsp;
+  Duration: ~32 min &nbsp;|&nbsp;
+  Run ID: <code>94cc8031-1f26-45db-b955-1260de17a5d0</code>
+</div>
+
+<div class="note">
+  ⓘ <strong>What "Clean Success" means here:</strong>
+  ASR transcript received → audio_chunk(s) received → audio_end received → received PCM is decodable.
+  Actual speaker playback cannot be verified from a Python test runner (requires a real browser AudioContext).
+</div>
+
+<div class="cards">
+  <div class="card">
+    <div class="card-label">Total Turns</div>
+    <div class="card-val">110</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Clean Success</div>
+    <div class="card-val" style="color:var(--green)">0</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Partial</div>
+    <div class="card-val" style="color:var(--amber)">0</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Failures</div>
+    <div class="card-val" style="color:var(--red)">110</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Clean Reliability</div>
+    <div class="card-val" style="color:#ef4444">0.0%</div>
+  </div>
+  <div class="card">
+    <div class="card-label">User-Visible Success</div>
+    <div class="card-val" style="color:#ef4444">0.0%</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Pipeline Success</div>
+    <div class="card-val" style="color:#ef4444">50.0%</div>
+  </div>
+</div>
+
+<h2>🌐 Per-Language Breakdown</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Language</th><th>Turns</th><th>Reliability</th><th>Pipeline OK</th>
+      <th>✅ Clean</th><th>⚠️ Partial</th><th>❌ Failed</th>
+      <th>Median E2E</th><th>Median ASR</th><th>Median Pipe</th><th>Primary Failure</th>
+    </tr>
+  </thead>
+  <tbody>
+        <tr>
+            <td><strong>bn-IN</strong></td>
+            <td>10</td>
+            <td style="color:#ef4444;font-weight:700">0.0%</td>
+            <td style="color:#ef4444">50.0%</td>
+            <td>0</td>
+            <td>0</td>
+            <td>10</td>
+            <td>25,631ms</td>
+            <td>8,840ms</td>
+            <td>—</td>
+            <td>NMT_TTS</td>
+        </tr>
+        <tr>
+            <td><strong>mr-IN</strong></td>
+            <td>10</td>
+            <td style="color:#ef4444;font-weight:700">0.0%</td>
+            <td style="color:#ef4444">50.0%</td>
+            <td>0</td>
+            <td>0</td>
+            <td>10</td>
+            <td>22,461ms</td>
+            <td>5,494ms</td>
+            <td>—</td>
+            <td>NMT_TTS</td>
+        </tr>
+        <tr>
+            <td><strong>te-IN</strong></td>
+            <td>10</td>
+            <td style="color:#ef4444;font-weight:700">0.0%</td>
+            <td style="color:#ef4444">50.0%</td>
+            <td>0</td>
+            <td>0</td>
+            <td>10</td>
+            <td>19,635ms</td>
+            <td>6,737ms</td>
+            <td>—</td>
+            <td>NMT_TTS</td>
+        </tr>
+        <tr>
+            <td><strong>ta-IN</strong></td>
+            <td>10</td>
+            <td style="color:#ef4444;font-weight:700">0.0%</td>
+            <td style="color:#ef4444">50.0%</td>
+            <td>0</td>
+            <td>0</td>
+            <td>10</td>
+            <td>20,693ms</td>
+            <td>8,050ms</td>
+            <td>—</td>
+            <td>NMT_TTS</td>
+        </tr>
+        <tr>
+            <td><strong>ur-IN</strong></td>
+            <td>10</td>
+            <td style="color:#ef4444;font-weight:700">0.0%</td>
+            <td style="color:#ef4444">50.0%</td>
+            <td>0</td>
+            <td>0</td>
+            <td>10</td>
+            <td>21,420ms</td>
+            <td>7,790ms</td>
+            <td>—</td>
+            <td>NMT_TTS</td>
+        </tr>
+        <tr>
+            <td><strong>gu-IN</strong></td>
+            <td>10</td>
+            <td style="color:#ef4444;font-weight:700">0.0%</td>
+            <td style="color:#ef4444">50.0%</td>
+            <td>0</td>
+            <td>0</td>
+            <td>10</td>
+            <td>20,614ms</td>
+            <td>7,193ms</td>
+            <td>—</td>
+            <td>NMT_TTS</td>
+        </tr>
+        <tr>
+            <td><strong>kn-IN</strong></td>
+            <td>10</td>
+            <td style="color:#ef4444;font-weight:700">0.0%</td>
+            <td style="color:#ef4444">50.0%</td>
+            <td>0</td>
+            <td>0</td>
+            <td>10</td>
+            <td>25,158ms</td>
+            <td>6,655ms</td>
+            <td>—</td>
+            <td>NMT_TTS</td>
+        </tr>
+        <tr>
+            <td><strong>od-IN</strong></td>
+            <td>10</td>
+            <td style="color:#ef4444;font-weight:700">0.0%</td>
+            <td style="color:#ef4444">50.0%</td>
+            <td>0</td>
+            <td>0</td>
+            <td>10</td>
+            <td>19,999ms</td>
+            <td>5,116ms</td>
+            <td>—</td>
+            <td>NMT_TTS</td>
+        </tr>
+        <tr>
+            <td><strong>ml-IN</strong></td>
+            <td>10</td>
+            <td style="color:#ef4444;font-weight:700">0.0%</td>
+            <td style="color:#ef4444">50.0%</td>
+            <td>0</td>
+            <td>0</td>
+            <td>10</td>
+            <td>24,477ms</td>
+            <td>8,196ms</td>
+            <td>—</td>
+            <td>NMT_TTS</td>
+        </tr>
+        <tr>
+            <td><strong>pa-IN</strong></td>
+            <td>10</td>
+            <td style="color:#ef4444;font-weight:700">0.0%</td>
+            <td style="color:#ef4444">50.0%</td>
+            <td>0</td>
+            <td>0</td>
+            <td>10</td>
+            <td>19,745ms</td>
+            <td>8,029ms</td>
+            <td>—</td>
+            <td>NMT_TTS</td>
+        </tr>
+        <tr>
+            <td><strong>as-IN</strong></td>
+            <td>10</td>
+            <td style="color:#ef4444;font-weight:700">0.0%</td>
+            <td style="color:#ef4444">50.0%</td>
+            <td>0</td>
+            <td>0</td>
+            <td>10</td>
+            <td>23,815ms</td>
+            <td>5,548ms</td>
+            <td>—</td>
+            <td>NMT_TTS</td>
+        </tr></tbody>
+</table>
+
+<h2>📊 Stage Latency Statistics</h2>
+<table>
+  <thead>
+    <tr><th>Stage</th><th>Min</th><th>Mean</th><th>Median</th><th>P95</th><th>P99</th><th>Max</th></tr>
+  </thead>
+  <tbody><tr><td>End-to-End</td><td>13,563ms</td><td>21,762ms</td><td>22,210ms</td><td>28,699ms</td><td>29,299ms</td><td>29,299ms</td></tr><tr><td>ASR (stop→final)</td><td>2,726ms</td><td>6,935ms</td><td>6,655ms</td><td>10,464ms</td><td>11,946ms</td><td>11,946ms</td></tr><tr><td>Pipeline NMT+TTS</td><td colspan=6 style='color:#6b7280'>NOT AVAILABLE</td></tr><tr><td>Audio Delivery</td><td colspan=6 style='color:#6b7280'>NOT AVAILABLE</td></tr><tr><td>PCM Send</td><td>9,156ms</td><td>14,224ms</td><td>13,851ms</td><td>18,206ms</td><td>18,655ms</td><td>18,655ms</td></tr></tbody>
+</table>
+
+<h2>📈 Persistent Session Analysis (Latency by Turn Number)</h2>
+<p style="color:var(--muted);font-size:12px;margin-bottom:10px">
+  Each WebSocket connection serves 10 turns. This table shows whether latency or reliability
+  degrades as the connection ages.
+</p>
+<table>
+  <thead>
+    <tr><th>Turn #</th><th>Conversations</th><th>Success Rate</th><th>Median E2E</th><th>P95 E2E</th></tr>
+  </thead>
+  <tbody><tr><td>Turn 1</td><td>11</td><td style='color:#ef4444'>0%</td><td>19,635ms</td><td>27,575ms</td></tr><tr><td>Turn 2</td><td>11</td><td style='color:#ef4444'>0%</td><td>20,210ms</td><td>25,676ms</td></tr><tr><td>Turn 3</td><td>11</td><td style='color:#ef4444'>0%</td><td>24,378ms</td><td>28,405ms</td></tr><tr><td>Turn 4</td><td>11</td><td style='color:#ef4444'>0%</td><td>22,407ms</td><td>29,050ms</td></tr><tr><td>Turn 5</td><td>11</td><td style='color:#ef4444'>0%</td><td>23,402ms</td><td>29,299ms</td></tr><tr><td>Turn 6</td><td>0</td><td style='color:#ef4444'>0%</td><td>—</td><td>—</td></tr><tr><td>Turn 7</td><td>0</td><td style='color:#ef4444'>0%</td><td>—</td><td>—</td></tr><tr><td>Turn 8</td><td>0</td><td style='color:#ef4444'>0%</td><td>—</td><td>—</td></tr><tr><td>Turn 9</td><td>0</td><td style='color:#ef4444'>0%</td><td>—</td><td>—</td></tr><tr><td>Turn 10</td><td>0</td><td style='color:#ef4444'>0%</td><td>—</td><td>—</td></tr></tbody>
+</table>
+
+<h2>🔥 Failure Taxonomy</h2>
+<table>
+  <thead><tr><th>Stage</th><th>Count</th></tr></thead>
+  <tbody><tr><td>Fixture</td><td>55</td></tr><tr><td>Nmt Tts</td><td>55</td></tr></tbody>
+</table>
+
+<h2>📋 Turn-by-Turn Event Log</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Turn</th><th>Src Lang</th><th>Detected</th><th>Status</th>
+      <th>ASR ms</th><th>Pipeline ms</th><th>E2E ms</th><th>Audio Bytes</th><th>Error</th>
+    </tr>
+  </thead>
+  <tbody><tr><td>1</td><td>bn-IN</td><td>bn-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>3,953ms</td><td>—</td><td>20,796ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>2</td><td>bn-IN</td><td>bn-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>8,863ms</td><td>—</td><td>25,676ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>3</td><td>bn-IN</td><td>bn-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>8,840ms</td><td>—</td><td>25,631ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>4</td><td>bn-IN</td><td>bn-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>8,392ms</td><td>—</td><td>24,986ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>5</td><td>bn-IN</td><td>bn-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>10,564ms</td><td>—</td><td>29,299ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>6</td><td>bn-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>7</td><td>bn-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>8</td><td>bn-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>9</td><td>bn-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>10</td><td>bn-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>1</td><td>mr-IN</td><td>mr-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>4,490ms</td><td>—</td><td>17,963ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>2</td><td>mr-IN</td><td>mr-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>4,985ms</td><td>—</td><td>16,627ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>3</td><td>mr-IN</td><td>mr-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>5,514ms</td><td>—</td><td>22,461ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>4</td><td>mr-IN</td><td>mr-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>5,494ms</td><td>—</td><td>23,626ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>5</td><td>mr-IN</td><td>mr-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>8,837ms</td><td>—</td><td>25,499ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>6</td><td>mr-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>7</td><td>mr-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>8</td><td>mr-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>9</td><td>mr-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>10</td><td>mr-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>1</td><td>te-IN</td><td>te-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>6,013ms</td><td>—</td><td>19,635ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>2</td><td>te-IN</td><td>te-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>4,102ms</td><td>—</td><td>15,018ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>3</td><td>te-IN</td><td>te-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>8,871ms</td><td>—</td><td>25,139ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>4</td><td>te-IN</td><td>te-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>6,737ms</td><td>—</td><td>16,531ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>5</td><td>te-IN</td><td>te-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>9,188ms</td><td>—</td><td>26,267ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>6</td><td>te-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>7</td><td>te-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>8</td><td>te-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>9</td><td>te-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>10</td><td>te-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>1</td><td>ta-IN</td><td>ta-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>2,726ms</td><td>—</td><td>15,372ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>2</td><td>ta-IN</td><td>ta-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>9,289ms</td><td>—</td><td>20,693ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>3</td><td>ta-IN</td><td>ta-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>9,101ms</td><td>—</td><td>25,773ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>4</td><td>ta-IN</td><td>ta-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>8,050ms</td><td>—</td><td>22,407ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>5</td><td>ta-IN</td><td>ta-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>5,678ms</td><td>—</td><td>17,055ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>6</td><td>ta-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>7</td><td>ta-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>8</td><td>ta-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>9</td><td>ta-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>10</td><td>ta-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>1</td><td>ur-IN</td><td>hi-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>4,107ms</td><td>—</td><td>13,814ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>2</td><td>ur-IN</td><td>hi-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>5,896ms</td><td>—</td><td>17,620ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>3</td><td>ur-IN</td><td>hi-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>8,900ms</td><td>—</td><td>25,081ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>4</td><td>ur-IN</td><td>hi-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>7,790ms</td><td>—</td><td>21,420ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>5</td><td>ur-IN</td><td>hi-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>11,946ms</td><td>—</td><td>28,699ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>6</td><td>ur-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>7</td><td>ur-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>8</td><td>ur-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>9</td><td>ur-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>10</td><td>ur-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>1</td><td>gu-IN</td><td>gu-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>6,315ms</td><td>—</td><td>24,386ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>2</td><td>gu-IN</td><td>gu-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>8,451ms</td><td>—</td><td>22,210ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>3</td><td>gu-IN</td><td>gu-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>7,707ms</td><td>—</td><td>20,614ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>4</td><td>gu-IN</td><td>gu-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>6,441ms</td><td>—</td><td>19,247ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>5</td><td>gu-IN</td><td>gu-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>7,193ms</td><td>—</td><td>20,369ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>6</td><td>gu-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>7</td><td>gu-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>8</td><td>gu-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>9</td><td>gu-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>10</td><td>gu-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>1</td><td>kn-IN</td><td>kn-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>6,655ms</td><td>—</td><td>25,158ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>2</td><td>kn-IN</td><td>kn-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>5,125ms</td><td>—</td><td>20,210ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>3</td><td>kn-IN</td><td>kn-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>3,989ms</td><td>—</td><td>14,550ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>4</td><td>kn-IN</td><td>kn-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>9,420ms</td><td>—</td><td>27,314ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>5</td><td>kn-IN</td><td>kn-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>9,353ms</td><td>—</td><td>28,292ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>6</td><td>kn-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>7</td><td>kn-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>8</td><td>kn-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>9</td><td>kn-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>10</td><td>kn-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>1</td><td>od-IN</td><td>or-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>10,464ms</td><td>—</td><td>27,575ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>2</td><td>od-IN</td><td>or-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>3,613ms</td><td>—</td><td>16,579ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>3</td><td>od-IN</td><td>or-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>5,116ms</td><td>—</td><td>19,999ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>4</td><td>od-IN</td><td>or-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>7,959ms</td><td>—</td><td>21,162ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>5</td><td>od-IN</td><td>or-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>3,770ms</td><td>—</td><td>13,563ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>6</td><td>od-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>7</td><td>od-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>8</td><td>od-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>9</td><td>od-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>10</td><td>od-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>1</td><td>ml-IN</td><td>ml-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>6,080ms</td><td>—</td><td>24,477ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>2</td><td>ml-IN</td><td>ml-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>4,516ms</td><td>—</td><td>15,775ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>3</td><td>ml-IN</td><td>ml-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>9,176ms</td><td>—</td><td>28,405ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>4</td><td>ml-IN</td><td>ml-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>10,216ms</td><td>—</td><td>29,050ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>5</td><td>ml-IN</td><td>ml-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>8,196ms</td><td>—</td><td>22,697ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>6</td><td>ml-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>7</td><td>ml-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>8</td><td>ml-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>9</td><td>ml-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>10</td><td>ml-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>1</td><td>pa-IN</td><td>pa-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>5,380ms</td><td>—</td><td>16,978ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>2</td><td>pa-IN</td><td>pa-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>8,029ms</td><td>—</td><td>25,138ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>3</td><td>pa-IN</td><td>pa-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>6,628ms</td><td>—</td><td>17,506ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>4</td><td>pa-IN</td><td>pa-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>8,378ms</td><td>—</td><td>19,745ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>5</td><td>pa-IN</td><td>pa-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>9,915ms</td><td>—</td><td>23,402ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>6</td><td>pa-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>7</td><td>pa-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>8</td><td>pa-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>9</td><td>pa-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>10</td><td>pa-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>1</td><td>as-IN</td><td>bn-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>3,452ms</td><td>—</td><td>18,862ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>2</td><td>as-IN</td><td>en-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>6,307ms</td><td>—</td><td>25,005ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>3</td><td>as-IN</td><td>bn-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>5,902ms</td><td>—</td><td>24,378ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>4</td><td>as-IN</td><td>bn-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>5,548ms</td><td>—</td><td>23,815ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>5</td><td>as-IN</td><td>bn-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>3,816ms</td><td>—</td><td>17,410ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>6</td><td>as-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>7</td><td>as-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>8</td><td>as-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>9</td><td>as-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr><tr><td>10</td><td>as-IN</td><td>—</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>—</td><td>—</td><td>—</td><td>0</td><td style='color:#ef4444;font-size:10px'>FIXTURE</td></tr></tbody>
+</table>
+
+<p style="color:var(--muted);font-size:11px;margin-top:20px">
+  Generated by varta.ai V2 WebSocket Reliability Test Runner · 2026-08-13 15:09:18
+</p>
+</body>
+</html>

@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V2 WebSocket Reliability Report — ws_reliability_20260813_230516</title>
+<style>
+  :root {
+    --bg: #07101f; --surface: #0c1524; --border: #1a2840;
+    --accent: #3b82f6; --green: #22c55e; --amber: #f59e0b; --red: #ef4444;
+    --text: #e2e8f0; --muted: #64748b; --subtle: #94a3b8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif;
+          padding: 24px; font-size: 14px; }
+  h1 { font-size: 24px; margin-bottom: 4px; }
+  h2 { font-size: 16px; color: var(--subtle); margin: 28px 0 12px; border-bottom: 1px solid var(--border);
+        padding-bottom: 6px; }
+  .meta { color: var(--muted); font-size: 12px; margin-bottom: 24px; }
+  .cards { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+           padding: 16px 24px; min-width: 160px; }
+  .card-label { font-size: 11px; color: var(--muted); text-transform: uppercase;
+                 letter-spacing: .5px; margin-bottom: 6px; }
+  .card-val { font-size: 32px; font-weight: 800; }
+  table { width: 100%; border-collapse: collapse; background: var(--surface);
+           border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 24px; }
+  th { background: #0a1422; padding: 10px 12px; font-size: 11px; text-align: left;
+        color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  td { padding: 8px 12px; font-size: 12px; border-top: 1px solid var(--border); }
+  tr:hover td { background: #0f1a2e; }
+  .note { background: #0c1829; border: 1px solid #1a2840; border-radius: 8px;
+           padding: 12px 16px; font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+</style>
+</head>
+<body>
+<h1>🛡️ V2 WebSocket Reliability + Latency Report</h1>
+<div class="meta">
+  Run: <strong>ws_reliability_20260813_230516</strong> &nbsp;|&nbsp;
+  Started: 2026-08-13 23:05:16 &nbsp;|&nbsp;
+  Duration: ~25 min &nbsp;|&nbsp;
+  Run ID: <code>176d7a99-dc87-44aa-8170-73748078a3c8</code>
+</div>
+
+<div class="note">
+  ⓘ <strong>What "Clean Success" means here:</strong>
+  ASR transcript received → audio_chunk(s) received → audio_end received → received PCM is decodable.
+  Actual speaker playback cannot be verified from a Python test runner (requires a real browser AudioContext).
+</div>
+
+<div class="cards">
+  <div class="card">
+    <div class="card-label">Total Turns</div>
+    <div class="card-val">50</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Clean Success</div>
+    <div class="card-val" style="color:var(--green)">45</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Partial</div>
+    <div class="card-val" style="color:var(--amber)">0</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Failures</div>
+    <div class="card-val" style="color:var(--red)">5</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Clean Reliability</div>
+    <div class="card-val" style="color:#22c55e">90.0%</div>
+  </div>
+  <div class="card">
+    <div class="card-label">User-Visible Success</div>
+    <div class="card-val" style="color:#22c55e">90.0%</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Pipeline Success</div>
+    <div class="card-val" style="color:#22c55e">100.0%</div>
+  </div>
+</div>
+
+<h2>🌐 Per-Language Breakdown</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Language</th><th>Turns</th><th>Reliability</th><th>Pipeline OK</th>
+      <th>✅ Clean</th><th>⚠️ Partial</th><th>❌ Failed</th>
+      <th>Median E2E</th><th>Median ASR</th><th>Median Pipe</th><th>Primary Failure</th>
+    </tr>
+  </thead>
+  <tbody>
+        <tr>
+            <td><strong>bn-IN</strong></td>
+            <td>5</td>
+            <td style="color:#22c55e;font-weight:700">100.0%</td>
+            <td style="color:#22c55e">100.0%</td>
+            <td>5</td>
+            <td>0</td>
+            <td>0</td>
+            <td>28,289ms</td>
+            <td>8,419ms</td>
+            <td>9,514ms</td>
+            <td>—</td>
+        </tr>
+        <tr>
+            <td><strong>mr-IN</strong></td>
+            <td>5</td>
+            <td style="color:#22c55e;font-weight:700">100.0%</td>
+            <td style="color:#22c55e">100.0%</td>
+            <td>5</td>
+            <td>0</td>
+            <td>0</td>
+            <td>26,303ms</td>
+            <td>5,641ms</td>
+            <td>7,031ms</td>
+            <td>—</td>
+        </tr>
+        <tr>
+            <td><strong>te-IN</strong></td>
+            <td>5</td>
+            <td style="color:#22c55e;font-weight:700">100.0%</td>
+            <td style="color:#22c55e">100.0%</td>
+            <td>5</td>
+            <td>0</td>
+            <td>0</td>
+            <td>19,188ms</td>
+            <td>6,665ms</td>
+            <td>7,798ms</td>
+            <td>—</td>
+        </tr>
+        <tr>
+            <td><strong>ta-IN</strong></td>
+            <td>5</td>
+            <td style="color:#22c55e;font-weight:700">100.0%</td>
+            <td style="color:#22c55e">100.0%</td>
+            <td>5</td>
+            <td>0</td>
+            <td>0</td>
+            <td>20,398ms</td>
+            <td>6,531ms</td>
+            <td>7,803ms</td>
+            <td>—</td>
+        </tr>
+        <tr>
+            <td><strong>ur-IN</strong></td>
+            <td>5</td>
+            <td style="color:#22c55e;font-weight:700">100.0%</td>
+            <td style="color:#22c55e">100.0%</td>
+            <td>5</td>
+            <td>0</td>
+            <td>0</td>
+            <td>26,665ms</td>
+            <td>8,316ms</td>
+            <td>8,825ms</td>
+            <td>—</td>
+        </tr>
+        <tr>
+            <td><strong>gu-IN</strong></td>
+            <td>5</td>
+            <td style="color:#22c55e;font-weight:700">100.0%</td>
+            <td style="color:#22c55e">100.0%</td>
+            <td>5</td>
+            <td>0</td>
+            <td>0</td>
+            <td>22,314ms</td>
+            <td>6,722ms</td>
+            <td>7,942ms</td>
+            <td>—</td>
+        </tr>
+        <tr>
+            <td><strong>kn-IN</strong></td>
+            <td>5</td>
+            <td style="color:#22c55e;font-weight:700">100.0%</td>
+            <td style="color:#22c55e">100.0%</td>
+            <td>5</td>
+            <td>0</td>
+            <td>0</td>
+            <td>25,236ms</td>
+            <td>4,277ms</td>
+            <td>5,413ms</td>
+            <td>—</td>
+        </tr>
+        <tr>
+            <td><strong>od-IN</strong></td>
+            <td>5</td>
+            <td style="color:#ef4444;font-weight:700">0.0%</td>
+            <td style="color:#22c55e">100.0%</td>
+            <td>0</td>
+            <td>0</td>
+            <td>5</td>
+            <td>19,049ms</td>
+            <td>4,660ms</td>
+            <td>—</td>
+            <td>NMT_TTS</td>
+        </tr>
+        <tr>
+            <td><strong>ml-IN</strong></td>
+            <td>5</td>
+            <td style="color:#22c55e;font-weight:700">100.0%</td>
+            <td style="color:#22c55e">100.0%</td>
+            <td>5</td>
+            <td>0</td>
+            <td>0</td>
+            <td>25,668ms</td>
+            <td>8,339ms</td>
+            <td>9,489ms</td>
+            <td>—</td>
+        </tr>
+        <tr>
+            <td><strong>pa-IN</strong></td>
+            <td>5</td>
+            <td style="color:#22c55e;font-weight:700">100.0%</td>
+            <td style="color:#22c55e">100.0%</td>
+            <td>5</td>
+            <td>0</td>
+            <td>0</td>
+            <td>23,307ms</td>
+            <td>7,707ms</td>
+            <td>9,094ms</td>
+            <td>—</td>
+        </tr></tbody>
+</table>
+
+
+<h2>📊 Visualizations</h2>
+<div class="chart-grid">
+    <div class="chart-container">
+        <h3 style="margin-bottom: 12px; font-size: 14px; color: var(--muted);">Global Median Latencies</h3>
+        <canvas id="globalLatencyChart"></canvas>
+    </div>
+    <div class="chart-container">
+        <h3 style="margin-bottom: 12px; font-size: 14px; color: var(--muted);">Clean Reliability by Language (%)</h3>
+        <canvas id="langRelChart"></canvas>
+    </div>
+</div>
+<div class="chart-container">
+    <h3 style="margin-bottom: 12px; font-size: 14px; color: var(--muted);">Latency Breakdown by Language</h3>
+    <canvas id="langCompareChart" style="max-height: 400px;"></canvas>
+</div>
+
+<h2>📊 Stage Latency Statistics</h2>
+<table>
+  <thead>
+    <tr><th>Stage</th><th>Min</th><th>Mean</th><th>Median</th><th>P95</th><th>P99</th><th>Max</th></tr>
+  </thead>
+  <tbody><tr><td>End-to-End</td><td>16,165ms</td><td>24,149ms</td><td>23,369ms</td><td>33,466ms</td><td>34,313ms</td><td>34,313ms</td></tr><tr><td>ASR (stop→final)</td><td>901ms</td><td>6,361ms</td><td>6,688ms</td><td>10,110ms</td><td>11,697ms</td><td>11,697ms</td></tr><tr><td>Pipeline NMT+TTS</td><td>2,080ms</td><td>7,648ms</td><td>7,942ms</td><td>11,528ms</td><td>12,177ms</td><td>12,177ms</td></tr><tr><td>Audio Delivery</td><td>1,044ms</td><td>2,744ms</td><td>2,597ms</td><td>4,145ms</td><td>4,844ms</td><td>4,844ms</td></tr><tr><td>PCM Send</td><td>9,339ms</td><td>14,200ms</td><td>13,901ms</td><td>18,164ms</td><td>18,584ms</td><td>18,584ms</td></tr></tbody>
+</table>
+
+<h2>📈 Persistent Session Analysis (Latency by Turn Number)</h2>
+<p style="color:var(--muted);font-size:12px;margin-bottom:10px">
+  Each WebSocket connection serves 10 turns. This table shows whether latency or reliability
+  degrades as the connection ages.
+</p>
+<table>
+  <thead>
+    <tr><th>Turn #</th><th>Conversations</th><th>Success Rate</th><th>Median E2E</th><th>P95 E2E</th></tr>
+  </thead>
+  <tbody><tr><td>Turn 1</td><td>10</td><td style='color:#22c55e'>90%</td><td>20,836ms</td><td>25,776ms</td></tr><tr><td>Turn 2</td><td>10</td><td style='color:#22c55e'>90%</td><td>21,171ms</td><td>29,274ms</td></tr><tr><td>Turn 3</td><td>10</td><td style='color:#22c55e'>90%</td><td>27,025ms</td><td>32,780ms</td></tr><tr><td>Turn 4</td><td>10</td><td style='color:#22c55e'>90%</td><td>24,986ms</td><td>33,789ms</td></tr><tr><td>Turn 5</td><td>10</td><td style='color:#22c55e'>90%</td><td>29,170ms</td><td>34,313ms</td></tr></tbody>
+</table>
+
+<h2>🔥 Failure Taxonomy</h2>
+<table>
+  <thead><tr><th>Stage</th><th>Count</th></tr></thead>
+  <tbody><tr><td>Nmt Tts</td><td>5</td></tr></tbody>
+</table>
+
+<h2>📋 Turn-by-Turn Event Log</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Turn</th><th>Src Lang</th><th>Detected</th><th>Status</th>
+      <th>ASR ms</th><th>Pipeline ms</th><th>E2E ms</th><th>Audio Bytes</th><th>Error</th>
+    </tr>
+  </thead>
+  <tbody><tr><td>1</td><td>bn-IN</td><td>bn-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>5,375ms</td><td>6,592ms</td><td>25,776ms</td><td>332,480</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>2</td><td>bn-IN</td><td>bn-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>8,906ms</td><td>10,090ms</td><td>28,289ms</td><td>275,136</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>3</td><td>bn-IN</td><td>bn-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>7,987ms</td><td>9,187ms</td><td>28,257ms</td><td>316,096</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>4</td><td>bn-IN</td><td>bn-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>8,419ms</td><td>9,514ms</td><td>28,324ms</td><td>332,480</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>5</td><td>bn-IN</td><td>bn-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>9,744ms</td><td>11,095ms</td><td>33,466ms</td><td>549,568</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>1</td><td>mr-IN</td><td>mr-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>3,076ms</td><td>4,268ms</td><td>19,402ms</td><td>312,000</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>2</td><td>mr-IN</td><td>mr-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>5,632ms</td><td>6,812ms</td><td>20,506ms</td><td>336,576</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>3</td><td>mr-IN</td><td>mr-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>5,850ms</td><td>7,115ms</td><td>26,303ms</td><td>344,768</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>4</td><td>mr-IN</td><td>mr-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>5,641ms</td><td>7,031ms</td><td>28,353ms</td><td>496,320</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>5</td><td>mr-IN</td><td>mr-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>8,914ms</td><td>10,135ms</td><td>30,019ms</td><td>484,032</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>1</td><td>te-IN</td><td>te-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>1,081ms</td><td>2,413ms</td><td>18,043ms</td><td>352,960</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>2</td><td>te-IN</td><td>te-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>3,133ms</td><td>4,339ms</td><td>16,917ms</td><td>287,424</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>3</td><td>te-IN</td><td>te-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>9,012ms</td><td>10,382ms</td><td>29,275ms</td><td>414,400</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>4</td><td>te-IN</td><td>te-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>6,665ms</td><td>7,798ms</td><td>19,188ms</td><td>287,424</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>5</td><td>te-IN</td><td>te-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>9,528ms</td><td>10,650ms</td><td>30,382ms</td><td>426,688</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>1</td><td>ta-IN</td><td>ta-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>905ms</td><td>2,248ms</td><td>17,346ms</td><td>381,632</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>2</td><td>ta-IN</td><td>ta-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>6,554ms</td><td>7,803ms</td><td>20,398ms</td><td>254,656</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>3</td><td>ta-IN</td><td>ta-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>6,531ms</td><td>7,900ms</td><td>27,747ms</td><td>438,976</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>4</td><td>ta-IN</td><td>ta-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>1,065ms</td><td>2,402ms</td><td>19,391ms</td><td>430,784</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>5</td><td>ta-IN</td><td>ta-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>7,611ms</td><td>8,836ms</td><td>22,137ms</td><td>307,904</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>1</td><td>ur-IN</td><td>hi-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>4,938ms</td><td>5,475ms</td><td>17,917ms</td><td>357,056</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>2</td><td>ur-IN</td><td>hi-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>6,859ms</td><td>7,345ms</td><td>22,273ms</td><td>348,864</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>3</td><td>ur-IN</td><td>hi-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>9,491ms</td><td>9,972ms</td><td>30,469ms</td><td>553,664</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>4</td><td>ur-IN</td><td>hi-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>8,316ms</td><td>8,825ms</td><td>26,665ms</td><td>503,808</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>5</td><td>ur-IN</td><td>hi-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>11,697ms</td><td>12,177ms</td><td>32,675ms</td><td>430,080</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>1</td><td>gu-IN</td><td>gu-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>1,067ms</td><td>2,334ms</td><td>22,035ms</td><td>316,096</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>2</td><td>gu-IN</td><td>gu-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>9,512ms</td><td>10,718ms</td><td>27,244ms</td><td>451,264</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>3</td><td>gu-IN</td><td>gu-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>8,420ms</td><td>9,912ms</td><td>24,570ms</td><td>312,000</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>4</td><td>gu-IN</td><td>gu-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>6,722ms</td><td>7,942ms</td><td>22,314ms</td><td>291,520</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>5</td><td>gu-IN</td><td>gu-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>1,001ms</td><td>2,080ms</td><td>16,702ms</td><td>312,000</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>1</td><td>kn-IN</td><td>kn-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>3,304ms</td><td>4,610ms</td><td>25,236ms</td><td>377,536</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>2</td><td>kn-IN</td><td>kn-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>4,277ms</td><td>5,413ms</td><td>21,837ms</td><td>242,368</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>3</td><td>kn-IN</td><td>kn-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>4,125ms</td><td>5,239ms</td><td>16,486ms</td><td>180,928</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>4</td><td>kn-IN</td><td>kn-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>8,322ms</td><td>9,536ms</td><td>30,152ms</td><td>418,496</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>5</td><td>kn-IN</td><td>kn-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>9,748ms</td><td>11,136ms</td><td>34,313ms</td><td>651,968</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>1</td><td>od-IN</td><td>or-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>4,660ms</td><td>—</td><td>21,861ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>2</td><td>od-IN</td><td>or-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>3,620ms</td><td>—</td><td>16,758ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>3</td><td>od-IN</td><td>or-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>4,634ms</td><td>—</td><td>19,049ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>4</td><td>od-IN</td><td>or-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>7,112ms</td><td>—</td><td>19,847ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>5</td><td>od-IN</td><td>or-IN</td><td><span style="background:#ef4444;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">FAILURE</span></td><td>6,457ms</td><td>—</td><td>16,165ms</td><td>0</td><td style='color:#ef4444;font-size:10px'>NMT_TTS</td></tr><tr><td>1</td><td>ml-IN</td><td>ml-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>901ms</td><td>2,103ms</td><td>23,431ms</td><td>422,592</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>2</td><td>ml-IN</td><td>ml-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>4,558ms</td><td>5,699ms</td><td>17,404ms</td><td>168,640</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>3</td><td>ml-IN</td><td>ml-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>9,765ms</td><td>11,099ms</td><td>32,780ms</td><td>414,400</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>4</td><td>ml-IN</td><td>ml-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>10,715ms</td><td>12,010ms</td><td>33,789ms</td><td>496,320</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>5</td><td>ml-IN</td><td>ml-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>8,339ms</td><td>9,489ms</td><td>25,668ms</td><td>312,000</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>1</td><td>pa-IN</td><td>pa-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>5,034ms</td><td>6,255ms</td><td>19,812ms</td><td>332,480</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>2</td><td>pa-IN</td><td>pa-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>7,707ms</td><td>9,094ms</td><td>29,274ms</td><td>541,376</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>3</td><td>pa-IN</td><td>pa-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>6,712ms</td><td>8,034ms</td><td>19,598ms</td><td>193,216</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>4</td><td>pa-IN</td><td>pa-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>8,298ms</td><td>9,551ms</td><td>23,307ms</td><td>402,112</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>5</td><td>pa-IN</td><td>pa-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>10,110ms</td><td>11,528ms</td><td>28,322ms</td><td>500,416</td><td style='color:#ef4444;font-size:10px'></td></tr></tbody>
+</table>
+
+<p style="color:var(--muted);font-size:11px;margin-top:20px">
+  Generated by varta.ai V2 WebSocket Reliability Test Runner · 2026-08-13 23:31:15
+</p>
+
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const langLabels = ["bn-IN", "mr-IN", "te-IN", "ta-IN", "ur-IN", "gu-IN", "kn-IN", "od-IN", "ml-IN", "pa-IN"];
+const globalLabels = ["PCM Send", "ASR", "NMT+TTS", "Audio Delivery", "End-to-End"];
+const globalValues = [13901.5, 6688.5, 7942, 2597, 23369.0];
+const langAsr = [8419, 5641, 6665, 6531, 8316, 6722, 4277, 4660, 8339, 7707];
+const langPipe = [9514, 7031, 7798, 7803, 8825, 7942, 5413, 0, 9489, 9094];
+const langAudio = [10356, 13631, 4725, 6064, 9524, 7650, 15546, 14389, 7840, 6506];
+const langRel = [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 0.0, 100.0, 100.0];
+
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.borderColor = '#1a2840';
+
+new Chart(document.getElementById('globalLatencyChart'), {
+    type: 'bar',
+    data: {
+        labels: globalLabels,
+        datasets: [{
+            label: 'Median Latency (ms)',
+            data: globalValues,
+            backgroundColor: ['#64748b', '#3b82f6', '#8b5cf6', '#14b8a6', '#f59e0b'],
+            borderRadius: 4
+        }]
+    },
+    options: { responsive: true, plugins: { legend: { display: false } } }
+});
+
+new Chart(document.getElementById('langCompareChart'), {
+    type: 'line',
+    data: {
+        labels: langLabels,
+        datasets: [
+            { label: 'ASR (ms)', data: langAsr, borderColor: '#3b82f6', backgroundColor: '#3b82f6', fill: false, tension: 0.3 },
+            { label: 'NMT+TTS (ms)', data: langPipe, borderColor: '#8b5cf6', backgroundColor: '#8b5cf6', fill: false, tension: 0.3 },
+            { label: 'Remaining E2E (ms)', data: langAudio, borderColor: '#f59e0b', backgroundColor: '#f59e0b', fill: false, tension: 0.3 }
+        ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+            y: { title: { display: true, text: 'Total Latency (ms)' } }
+        }
+    }
+});
+
+new Chart(document.getElementById('langRelChart'), {
+    type: 'line',
+    data: {
+        labels: langLabels,
+        datasets: [{
+            label: 'Reliability %',
+            data: langRel,
+            borderColor: '#22c55e',
+            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+            fill: true,
+            tension: 0.3,
+            pointBackgroundColor: '#22c55e'
+        }]
+    },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 100 } } }
+});
+</script>
+</body>
+
+</html>

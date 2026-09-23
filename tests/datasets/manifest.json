@@ -1,0 +1,613 @@
+﻿{
+  "hi": [
+    {
+      "varta_code": "hi",
+      "fleurs_code": "hi_in",
+      "sample_index": 1,
+      "file": "test/datasets/hi/sample_1.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 35574,
+      "transcription": ""
+    },
+    {
+      "varta_code": "hi",
+      "fleurs_code": "hi_in",
+      "sample_index": 2,
+      "file": "test/datasets/hi/sample_2.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 20410,
+      "transcription": ""
+    },
+    {
+      "varta_code": "hi",
+      "fleurs_code": "hi_in",
+      "sample_index": 3,
+      "file": "test/datasets/hi/sample_3.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 44136,
+      "transcription": ""
+    },
+    {
+      "varta_code": "hi",
+      "fleurs_code": "hi_in",
+      "sample_index": 4,
+      "file": "test/datasets/hi/sample_4.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 32071,
+      "transcription": ""
+    },
+    {
+      "varta_code": "hi",
+      "fleurs_code": "hi_in",
+      "sample_index": 5,
+      "file": "test/datasets/hi/sample_5.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 28933,
+      "transcription": ""
+    }
+  ],
+  "bn": [
+    {
+      "varta_code": "bn",
+      "fleurs_code": "bn_in",
+      "sample_index": 1,
+      "file": "test/datasets/bn/sample_1.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 43089,
+      "transcription": ""
+    },
+    {
+      "varta_code": "bn",
+      "fleurs_code": "bn_in",
+      "sample_index": 2,
+      "file": "test/datasets/bn/sample_2.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 43889,
+      "transcription": ""
+    },
+    {
+      "varta_code": "bn",
+      "fleurs_code": "bn_in",
+      "sample_index": 3,
+      "file": "test/datasets/bn/sample_3.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 44164,
+      "transcription": ""
+    },
+    {
+      "varta_code": "bn",
+      "fleurs_code": "bn_in",
+      "sample_index": 4,
+      "file": "test/datasets/bn/sample_4.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 43539,
+      "transcription": ""
+    },
+    {
+      "varta_code": "bn",
+      "fleurs_code": "bn_in",
+      "sample_index": 5,
+      "file": "test/datasets/bn/sample_5.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 49882,
+      "transcription": ""
+    }
+  ],
+  "mr": [
+    {
+      "varta_code": "mr",
+      "fleurs_code": "mr_in",
+      "sample_index": 1,
+      "file": "test/datasets/mr/sample_1.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 35454,
+      "transcription": ""
+    },
+    {
+      "varta_code": "mr",
+      "fleurs_code": "mr_in",
+      "sample_index": 2,
+      "file": "test/datasets/mr/sample_2.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 30303,
+      "transcription": ""
+    },
+    {
+      "varta_code": "mr",
+      "fleurs_code": "mr_in",
+      "sample_index": 3,
+      "file": "test/datasets/mr/sample_3.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 45344,
+      "transcription": ""
+    },
+    {
+      "varta_code": "mr",
+      "fleurs_code": "mr_in",
+      "sample_index": 4,
+      "file": "test/datasets/mr/sample_4.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 47183,
+      "transcription": ""
+    },
+    {
+      "varta_code": "mr",
+      "fleurs_code": "mr_in",
+      "sample_index": 5,
+      "file": "test/datasets/mr/sample_5.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 43946,
+      "transcription": ""
+    }
+  ],
+  "te": [
+    {
+      "varta_code": "te",
+      "fleurs_code": "te_in",
+      "sample_index": 1,
+      "file": "test/datasets/te/sample_1.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 34248,
+      "transcription": ""
+    },
+    {
+      "varta_code": "te",
+      "fleurs_code": "te_in",
+      "sample_index": 2,
+      "file": "test/datasets/te/sample_2.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 28516,
+      "transcription": ""
+    },
+    {
+      "varta_code": "te",
+      "fleurs_code": "te_in",
+      "sample_index": 3,
+      "file": "test/datasets/te/sample_3.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 43452,
+      "transcription": ""
+    },
+    {
+      "varta_code": "te",
+      "fleurs_code": "te_in",
+      "sample_index": 4,
+      "file": "test/datasets/te/sample_4.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 25461,
+      "transcription": ""
+    },
+    {
+      "varta_code": "te",
+      "fleurs_code": "te_in",
+      "sample_index": 5,
+      "file": "test/datasets/te/sample_5.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 40600,
+      "transcription": ""
+    }
+  ],
+  "ta": [
+    {
+      "varta_code": "ta",
+      "fleurs_code": "ta_in",
+      "sample_index": 1,
+      "file": "test/datasets/ta/sample_1.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 33341,
+      "transcription": ""
+    },
+    {
+      "varta_code": "ta",
+      "fleurs_code": "ta_in",
+      "sample_index": 2,
+      "file": "test/datasets/ta/sample_2.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 29215,
+      "transcription": ""
+    },
+    {
+      "varta_code": "ta",
+      "fleurs_code": "ta_in",
+      "sample_index": 3,
+      "file": "test/datasets/ta/sample_3.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 42536,
+      "transcription": ""
+    },
+    {
+      "varta_code": "ta",
+      "fleurs_code": "ta_in",
+      "sample_index": 4,
+      "file": "test/datasets/ta/sample_4.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 37467,
+      "transcription": ""
+    },
+    {
+      "varta_code": "ta",
+      "fleurs_code": "ta_in",
+      "sample_index": 5,
+      "file": "test/datasets/ta/sample_5.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 30967,
+      "transcription": ""
+    }
+  ],
+  "ur": [
+    {
+      "varta_code": "ur",
+      "fleurs_code": "ur_pk",
+      "sample_index": 1,
+      "file": "test/datasets/ur/sample_1.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 26897,
+      "transcription": ""
+    },
+    {
+      "varta_code": "ur",
+      "fleurs_code": "ur_pk",
+      "sample_index": 2,
+      "file": "test/datasets/ur/sample_2.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 31189,
+      "transcription": ""
+    },
+    {
+      "varta_code": "ur",
+      "fleurs_code": "ur_pk",
+      "sample_index": 3,
+      "file": "test/datasets/ur/sample_3.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 44115,
+      "transcription": ""
+    },
+    {
+      "varta_code": "ur",
+      "fleurs_code": "ur_pk",
+      "sample_index": 4,
+      "file": "test/datasets/ur/sample_4.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 36172,
+      "transcription": ""
+    },
+    {
+      "varta_code": "ur",
+      "fleurs_code": "ur_pk",
+      "sample_index": 5,
+      "file": "test/datasets/ur/sample_5.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 46164,
+      "transcription": ""
+    }
+  ],
+  "gu": [
+    {
+      "varta_code": "gu",
+      "fleurs_code": "gu_in",
+      "sample_index": 1,
+      "file": "test/datasets/gu/sample_1.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 46200,
+      "transcription": ""
+    },
+    {
+      "varta_code": "gu",
+      "fleurs_code": "gu_in",
+      "sample_index": 2,
+      "file": "test/datasets/gu/sample_2.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 35871,
+      "transcription": ""
+    },
+    {
+      "varta_code": "gu",
+      "fleurs_code": "gu_in",
+      "sample_index": 3,
+      "file": "test/datasets/gu/sample_3.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 33516,
+      "transcription": ""
+    },
+    {
+      "varta_code": "gu",
+      "fleurs_code": "gu_in",
+      "sample_index": 4,
+      "file": "test/datasets/gu/sample_4.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 32925,
+      "transcription": ""
+    },
+    {
+      "varta_code": "gu",
+      "fleurs_code": "gu_in",
+      "sample_index": 5,
+      "file": "test/datasets/gu/sample_5.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 34097,
+      "transcription": ""
+    }
+  ],
+  "kn": [
+    {
+      "varta_code": "kn",
+      "fleurs_code": "kn_in",
+      "sample_index": 1,
+      "file": "test/datasets/kn/sample_1.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 48375,
+      "transcription": ""
+    },
+    {
+      "varta_code": "kn",
+      "fleurs_code": "kn_in",
+      "sample_index": 2,
+      "file": "test/datasets/kn/sample_2.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 39529,
+      "transcription": ""
+    },
+    {
+      "varta_code": "kn",
+      "fleurs_code": "kn_in",
+      "sample_index": 3,
+      "file": "test/datasets/kn/sample_3.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 27507,
+      "transcription": ""
+    },
+    {
+      "varta_code": "kn",
+      "fleurs_code": "kn_in",
+      "sample_index": 4,
+      "file": "test/datasets/kn/sample_4.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 47126,
+      "transcription": ""
+    },
+    {
+      "varta_code": "kn",
+      "fleurs_code": "kn_in",
+      "sample_index": 5,
+      "file": "test/datasets/kn/sample_5.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 38909,
+      "transcription": ""
+    }
+  ],
+  "or": [
+    {
+      "varta_code": "or",
+      "fleurs_code": "or_in",
+      "sample_index": 1,
+      "file": "test/datasets/or/sample_1.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 46103,
+      "transcription": ""
+    },
+    {
+      "varta_code": "or",
+      "fleurs_code": "or_in",
+      "sample_index": 2,
+      "file": "test/datasets/or/sample_2.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 20626,
+      "transcription": ""
+    },
+    {
+      "varta_code": "or",
+      "fleurs_code": "or_in",
+      "sample_index": 3,
+      "file": "test/datasets/or/sample_3.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 38084,
+      "transcription": ""
+    },
+    {
+      "varta_code": "or",
+      "fleurs_code": "or_in",
+      "sample_index": 4,
+      "file": "test/datasets/or/sample_4.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 34180,
+      "transcription": ""
+    },
+    {
+      "varta_code": "or",
+      "fleurs_code": "or_in",
+      "sample_index": 5,
+      "file": "test/datasets/or/sample_5.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 25866,
+      "transcription": ""
+    }
+  ],
+  "ml": [
+    {
+      "varta_code": "ml",
+      "fleurs_code": "ml_in",
+      "sample_index": 1,
+      "file": "test/datasets/ml/sample_1.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 47063,
+      "transcription": ""
+    },
+    {
+      "varta_code": "ml",
+      "fleurs_code": "ml_in",
+      "sample_index": 2,
+      "file": "test/datasets/ml/sample_2.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 27280,
+      "transcription": ""
+    },
+    {
+      "varta_code": "ml",
+      "fleurs_code": "ml_in",
+      "sample_index": 3,
+      "file": "test/datasets/ml/sample_3.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 49006,
+      "transcription": ""
+    },
+    {
+      "varta_code": "ml",
+      "fleurs_code": "ml_in",
+      "sample_index": 4,
+      "file": "test/datasets/ml/sample_4.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 47373,
+      "transcription": ""
+    },
+    {
+      "varta_code": "ml",
+      "fleurs_code": "ml_in",
+      "sample_index": 5,
+      "file": "test/datasets/ml/sample_5.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 37237,
+      "transcription": ""
+    }
+  ],
+  "pa": [
+    {
+      "varta_code": "pa",
+      "fleurs_code": "pa_in",
+      "sample_index": 1,
+      "file": "test/datasets/pa/sample_1.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 29554,
+      "transcription": ""
+    },
+    {
+      "varta_code": "pa",
+      "fleurs_code": "pa_in",
+      "sample_index": 2,
+      "file": "test/datasets/pa/sample_2.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 42289,
+      "transcription": ""
+    },
+    {
+      "varta_code": "pa",
+      "fleurs_code": "pa_in",
+      "sample_index": 3,
+      "file": "test/datasets/pa/sample_3.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 27149,
+      "transcription": ""
+    },
+    {
+      "varta_code": "pa",
+      "fleurs_code": "pa_in",
+      "sample_index": 4,
+      "file": "test/datasets/pa/sample_4.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 28955,
+      "transcription": ""
+    },
+    {
+      "varta_code": "pa",
+      "fleurs_code": "pa_in",
+      "sample_index": 5,
+      "file": "test/datasets/pa/sample_5.webm",
+      "duration_sec": 0.0,
+      "size_bytes": 34533,
+      "transcription": ""
+    }
+  ],
+  "as": [
+    {
+      "varta_code": "as",
+      "fleurs_code": "as_in",
+      "sample_index": 1,
+      "file": "test/datasets/as/sample_1.webm",
+      "duration_sec": 9.48,
+      "size_bytes": 39568,
+      "transcription": "test/10007973808011083086.wav"
+    },
+    {
+      "varta_code": "as",
+      "fleurs_code": "as_in",
+      "sample_index": 2,
+      "file": "test/datasets/as/sample_2.webm",
+      "duration_sec": 11.52,
+      "size_bytes": 48642,
+      "transcription": "test/10025377740714651614.wav"
+    },
+    {
+      "varta_code": "as",
+      "fleurs_code": "as_in",
+      "sample_index": 3,
+      "file": "test/datasets/as/sample_3.webm",
+      "duration_sec": 8.34,
+      "size_bytes": 33695,
+      "transcription": "test/1003211011223090716.wav"
+    },
+    {
+      "varta_code": "as",
+      "fleurs_code": "as_in",
+      "sample_index": 4,
+      "file": "test/datasets/as/sample_4.webm",
+      "duration_sec": 11.28,
+      "size_bytes": 46247,
+      "transcription": "test/10041524874893156910.wav"
+    },
+    {
+      "varta_code": "as",
+      "fleurs_code": "as_in",
+      "sample_index": 5,
+      "file": "test/datasets/as/sample_5.webm",
+      "duration_sec": 8.34,
+      "size_bytes": 33823,
+      "transcription": "test/10050229560315113670.wav"
+    }
+  ],
+  "sd": [
+    {
+      "varta_code": "sd",
+      "fleurs_code": "sd_in",
+      "sample_index": 1,
+      "file": "test/datasets/sd/sample_1.webm",
+      "duration_sec": 9.72,
+      "size_bytes": 40894,
+      "transcription": "test/10032344746424251496.wav"
+    },
+    {
+      "varta_code": "sd",
+      "fleurs_code": "sd_in",
+      "sample_index": 2,
+      "file": "test/datasets/sd/sample_2.webm",
+      "duration_sec": 11.28,
+      "size_bytes": 47659,
+      "transcription": "test/10054384391865365803.wav"
+    },
+    {
+      "varta_code": "sd",
+      "fleurs_code": "sd_in",
+      "sample_index": 3,
+      "file": "test/datasets/sd/sample_3.webm",
+      "duration_sec": 10.32,
+      "size_bytes": 43482,
+      "transcription": "test/10108910129182717636.wav"
+    },
+    {
+      "varta_code": "sd",
+      "fleurs_code": "sd_in",
+      "sample_index": 4,
+      "file": "test/datasets/sd/sample_4.webm",
+      "duration_sec": 7.56,
+      "size_bytes": 32535,
+      "transcription": "test/10113061057582656700.wav"
+    },
+    {
+      "varta_code": "sd",
+      "fleurs_code": "sd_in",
+      "sample_index": 5,
+      "file": "test/datasets/sd/sample_5.webm",
+      "duration_sec": 11.4,
+      "size_bytes": 48962,
+      "transcription": "test/10114175189465900941.wav"
+    }
+  ]
+}
