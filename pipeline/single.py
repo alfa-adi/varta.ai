@@ -132,6 +132,7 @@ class SinglePipeline:
         transcript:   str,
         src_language: str,
         voice_gender: str = "female",
+        on_nmt_complete: callable = None,
     ) -> AsyncIterator[bytes]:
         """
         Live streaming path — ASR is already done via the persistent WS.
@@ -146,10 +147,12 @@ class SinglePipeline:
             transcript:   Final transcript from SarvamLiveASRAdapter.signal_speech_end()
             src_language: Detected source language (BCP-47 e.g. "hi-IN")
             voice_gender: "female" or "male" (default "female")
+            on_nmt_complete: Optional callback invoked after NMT finishes but before TTS stream
 
         Yields:
             bytes — raw linear16 PCM audio chunks (pcm_s16le, 24 kHz, mono)
         """
+        import inspect
         # ── Step 1: NMT — translate the final transcript ──────────────
         # This is a single REST call (~200-400ms). No ASR step here.
         nmt_output = await self.nmt_adapter.translate(
@@ -160,6 +163,12 @@ class SinglePipeline:
             )
         )
         self.last_nmt_output = nmt_output
+
+        if on_nmt_complete:
+            if inspect.iscoroutinefunction(on_nmt_complete):
+                await on_nmt_complete(nmt_output)
+            else:
+                on_nmt_complete(nmt_output)
 
         # ── Step 2: TTS streaming — yield chunks as they arrive ───────
         # synthesise_streaming() is an async generator that yields each

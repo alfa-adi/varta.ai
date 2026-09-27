@@ -339,12 +339,12 @@ def log_translation(
 
 def log_metrics(
     session_id: str,
-    turn_id:    str,
-    endpoint:   str,
-    timing:     dict,
-    src_lang:   str,
-    tgt_lang:   str,
-    char_count: int,
+    turn_id:    str = "legacy",
+    endpoint:   str = "",
+    timing:     dict = None,
+    src_lang:   str = "",
+    tgt_lang:   str = "",
+    char_count: int = 0,
 ):
     """Write latency data to varta_metrics. Completely separate from log_translation."""
     # ── Re-enabled on test-latency-tracking branch ────────────────────────────

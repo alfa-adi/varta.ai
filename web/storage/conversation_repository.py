@@ -106,12 +106,9 @@ def reserve_turn_sync(
             "metadata":          {},
         }
         try:
-            print(f">>> reserve_turn_sync ATTEMPTING insert_one doc: {doc}")
             turns.insert_one(doc)
-            print(f">>> reserve_turn_sync SUCCESS inserting doc: {doc}")
             return doc, True
         except DuplicateKeyError as exc:
-            print(f">>> reserve_turn_sync DUPLICATE KEY ERROR: {exc}")
             details = getattr(exc, "details", None) or {}
             kp = details.get("keyPattern", {})
             err_str = str(exc)
