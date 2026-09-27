@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>V2 WebSocket Reliability Report — ws_reliability_20260814_011954</title>
+<style>
+  :root {
+    --bg: #07101f; --surface: #0c1524; --border: #1a2840;
+    --accent: #3b82f6; --green: #22c55e; --amber: #f59e0b; --red: #ef4444;
+    --text: #e2e8f0; --muted: #64748b; --subtle: #94a3b8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif;
+          padding: 24px; font-size: 14px; }
+  h1 { font-size: 24px; margin-bottom: 4px; }
+  h2 { font-size: 16px; color: var(--subtle); margin: 28px 0 12px; border-bottom: 1px solid var(--border);
+        padding-bottom: 6px; }
+  .meta { color: var(--muted); font-size: 12px; margin-bottom: 24px; }
+  .cards { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+           padding: 16px 24px; min-width: 160px; }
+  .card-label { font-size: 11px; color: var(--muted); text-transform: uppercase;
+                 letter-spacing: .5px; margin-bottom: 6px; }
+  .card-val { font-size: 32px; font-weight: 800; }
+  table { width: 100%; border-collapse: collapse; background: var(--surface);
+           border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 24px; }
+  th { background: #0a1422; padding: 10px 12px; font-size: 11px; text-align: left;
+        color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  td { padding: 8px 12px; font-size: 12px; border-top: 1px solid var(--border); }
+  tr:hover td { background: #0f1a2e; }
+  .chart-container { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+  @media (max-width: 1024px) { .chart-grid { grid-template-columns: 1fr; } }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<h1>🛡️ V2 WebSocket Reliability + Latency Report</h1>
+<div class="meta">
+  Run: <strong>ws_reliability_20260814_011954</strong> &nbsp;|&nbsp;
+  Started: 2026-08-14 01:19:54 &nbsp;|&nbsp;
+  Duration: ~1 min &nbsp;|&nbsp;
+  Run ID: <code>bcaadae8-e3e3-4655-9dd2-2f9dcbfa7312</code>
+</div>
+
+<div class="note">
+  ⓘ <strong>What "Clean Success" means here:</strong>
+  ASR transcript received → audio_chunk(s) received → audio_end received → received PCM is decodable.
+  Actual speaker playback cannot be verified from a Python test runner (requires a real browser AudioContext).
+</div>
+
+<div class="cards">
+  <div class="card">
+    <div class="card-label">Total Turns</div>
+    <div class="card-val">3</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Clean Success</div>
+    <div class="card-val" style="color:var(--green)">3</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Partial</div>
+    <div class="card-val" style="color:var(--amber)">0</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Failures</div>
+    <div class="card-val" style="color:var(--red)">0</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Clean Reliability</div>
+    <div class="card-val" style="color:#22c55e">100.0%</div>
+  </div>
+  <div class="card">
+    <div class="card-label">User-Visible Success</div>
+    <div class="card-val" style="color:#22c55e">100.0%</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Pipeline Success</div>
+    <div class="card-val" style="color:#22c55e">100.0%</div>
+  </div>
+</div>
+
+<h2>🌐 Per-Language Breakdown</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Language</th><th>Turns</th><th>Reliability</th><th>Pipeline OK</th>
+      <th>✅ Clean</th><th>⚠️ Partial</th><th>❌ Failed</th>
+      <th>Median E2E</th><th>Median ASR</th><th>Median Pipe</th><th>Primary Failure</th>
+    </tr>
+  </thead>
+  <tbody>
+        <tr>
+            <td><strong>bn-IN</strong></td>
+            <td>3</td>
+            <td style="color:#22c55e;font-weight:700">100.0%</td>
+            <td style="color:#22c55e">100.0%</td>
+            <td>3</td>
+            <td>0</td>
+            <td>0</td>
+            <td>21,354ms</td>
+            <td>818ms</td>
+            <td>2,810ms</td>
+            <td>—</td>
+        </tr></tbody>
+</table>
+
+<h2>📊 Visualizations</h2>
+<div class="chart-grid">
+    <div class="chart-container">
+        <h3 style="margin-bottom: 12px; font-size: 14px; color: var(--muted);">Global Median Latencies</h3>
+        <canvas id="globalLatencyChart"></canvas>
+    </div>
+    <div class="chart-container">
+        <h3 style="margin-bottom: 12px; font-size: 14px; color: var(--muted);">Clean Reliability by Language (%)</h3>
+        <canvas id="langRelChart"></canvas>
+    </div>
+</div>
+<div class="chart-container">
+    <h3 style="margin-bottom: 12px; font-size: 14px; color: var(--muted);">Latency Breakdown by Language</h3>
+    <canvas id="langCompareChart" style="max-height: 400px;"></canvas>
+</div>
+
+<h2>📊 Stage Latency Statistics</h2>
+<table>
+  <thead>
+    <tr><th>Stage</th><th>Min</th><th>Mean</th><th>Median</th><th>P95</th><th>P99</th><th>Max</th></tr>
+  </thead>
+  <tbody><tr><td>End-to-End</td><td>20,943ms</td><td>21,544ms</td><td>21,354ms</td><td>22,337ms</td><td>22,337ms</td><td>22,337ms</td></tr><tr><td>ASR (stop→final)</td><td>725ms</td><td>1,165ms</td><td>818ms</td><td>1,953ms</td><td>1,953ms</td><td>1,953ms</td></tr><tr><td>Pipeline NMT+TTS</td><td>2,612ms</td><td>3,116ms</td><td>2,810ms</td><td>3,927ms</td><td>3,927ms</td><td>3,927ms</td></tr><tr><td>Audio Delivery</td><td>1,962ms</td><td>2,144ms</td><td>2,235ms</td><td>2,236ms</td><td>2,236ms</td><td>2,236ms</td></tr><tr><td>PCM Send</td><td>16,106ms</td><td>16,218ms</td><td>16,245ms</td><td>16,304ms</td><td>16,304ms</td><td>16,304ms</td></tr></tbody>
+</table>
+
+<h2>📈 Persistent Session Analysis (Latency by Turn Number)</h2>
+<p style="color:var(--muted);font-size:12px;margin-bottom:10px">
+  Each WebSocket connection serves 10 turns. This table shows whether latency or reliability
+  degrades as the connection ages.
+</p>
+<table>
+  <thead>
+    <tr><th>Turn #</th><th>Conversations</th><th>Success Rate</th><th>Median E2E</th><th>P95 E2E</th></tr>
+  </thead>
+  <tbody><tr><td>Turn 1</td><td>1</td><td style='color:#22c55e'>100%</td><td>21,354ms</td><td>21,354ms</td></tr><tr><td>Turn 2</td><td>1</td><td style='color:#22c55e'>100%</td><td>22,337ms</td><td>22,337ms</td></tr><tr><td>Turn 3</td><td>1</td><td style='color:#22c55e'>100%</td><td>20,943ms</td><td>20,943ms</td></tr></tbody>
+</table>
+
+<h2>🔥 Failure Taxonomy</h2>
+<table>
+  <thead><tr><th>Stage</th><th>Count</th></tr></thead>
+  <tbody><tr><td colspan=2 style='color:var(--green)'>No failures</td></tr></tbody>
+</table>
+
+<h2>📋 Turn-by-Turn Event Log</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Turn</th><th>Src Lang</th><th>Detected</th><th>Status</th>
+      <th>ASR ms</th><th>Pipeline ms</th><th>E2E ms</th><th>Audio Bytes</th><th>Error</th>
+    </tr>
+  </thead>
+  <tbody><tr><td>1</td><td>bn-IN</td><td>bn-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>818ms</td><td>2,810ms</td><td>21,354ms</td><td>316,096</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>2</td><td>bn-IN</td><td>bn-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>1,953ms</td><td>3,927ms</td><td>22,337ms</td><td>299,712</td><td style='color:#ef4444;font-size:10px'></td></tr><tr><td>3</td><td>bn-IN</td><td>bn-IN</td><td><span style="background:#22c55e;color:#fff;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700">CLEAN SUCCESS</span></td><td>725ms</td><td>2,612ms</td><td>20,943ms</td><td>271,040</td><td style='color:#ef4444;font-size:10px'></td></tr></tbody>
+</table>
+
+<p style="color:var(--muted);font-size:11px;margin-top:20px">
+  Generated by varta.ai V2 WebSocket Reliability Test Runner · 2026-08-14 01:21:17
+</p>
+
+<script>
+["bn-IN"].then = null; // Just to make sure json loads isn't syntax error without var
+const langLabels = ["bn-IN"];
+const globalLabels = ["PCM Send", "ASR", "NMT+TTS", "Audio Delivery", "End-to-End"];
+const globalValues = [
+    16245,
+    818,
+    2810,
+    2235,
+    21354
+];
+
+const langAsr = [818];
+const langPipe = [2810];
+const langAudio = [17726];
+const langRel = [100.0];
+
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.borderColor = '#1a2840';
+
+new Chart(document.getElementById('globalLatencyChart'), {
+    type: 'bar',
+    data: {
+        labels: globalLabels,
+        datasets: [{
+            label: 'Median Latency (ms)',
+            data: globalValues,
+            backgroundColor: ['#64748b', '#3b82f6', '#8b5cf6', '#14b8a6', '#f59e0b'],
+            borderRadius: 4
+        }]
+    },
+    options: { responsive: true, plugins: { legend: { display: false } } }
+});
+
+new Chart(document.getElementById('langCompareChart'), {
+    type: 'line',
+    data: {
+        labels: langLabels,
+        datasets: [
+            { label: 'ASR (ms)', data: langAsr, borderColor: '#3b82f6', backgroundColor: '#3b82f6', fill: false, tension: 0.3 },
+            { label: 'NMT+TTS (ms)', data: langPipe, borderColor: '#8b5cf6', backgroundColor: '#8b5cf6', fill: false, tension: 0.3 },
+            { label: 'Remaining E2E (ms)', data: langAudio, borderColor: '#f59e0b', backgroundColor: '#f59e0b', fill: false, tension: 0.3 }
+        ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+            y: { title: { display: true, text: 'Total Latency (ms)' } }
+        }
+    }
+});
+
+new Chart(document.getElementById('langRelChart'), {
+    type: 'line',
+    data: {
+        labels: langLabels,
+        datasets: [{
+            label: 'Reliability %',
+            data: langRel,
+            borderColor: '#22c55e',
+            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+            fill: true,
+            tension: 0.3,
+            pointBackgroundColor: '#22c55e'
+        }]
+    },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 100 } } }
+});
+</script>
+</body>
+</html>

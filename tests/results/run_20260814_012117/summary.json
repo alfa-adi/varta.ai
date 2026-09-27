@@ -1,0 +1,153 @@
+{
+  "run_id": "bcaadae8-e3e3-4655-9dd2-2f9dcbfa7312",
+  "run_label": "ws_reliability_20260814_011954",
+  "started_at": 1786650594.9379964,
+  "finished_at": 1786650677.1085486,
+  "config": {
+    "target_url": "ws://localhost:8000",
+    "n_conversations": 1,
+    "turns_per_convo": 3,
+    "target_language": "hi-IN",
+    "inter_turn_delay_sec": 7.0,
+    "inter_convo_delay_sec": 5.0,
+    "languages": [
+      "bn"
+    ]
+  },
+  "total_turns": 3,
+  "clean_successes": 3,
+  "partial_successes": 0,
+  "failures": 0,
+  "not_run": 0,
+  "clean_reliability_pct": 100.0,
+  "user_visible_success_pct": 100.0,
+  "pipeline_success_pct": 100.0,
+  "failure_breakdown": {
+    "connection": 0,
+    "fixture": 0,
+    "send": 0,
+    "asr": 0,
+    "nmt_tts": 0,
+    "receive": 0,
+    "decode": 0,
+    "timeout": 0,
+    "unknown": 0
+  },
+  "latency_stats": {
+    "e2e": {
+      "available": true,
+      "count": 3,
+      "min": 20943,
+      "mean": 21544.7,
+      "median": 21354,
+      "p95": 22337,
+      "p99": 22337,
+      "max": 22337
+    },
+    "asr": {
+      "available": true,
+      "count": 3,
+      "min": 725,
+      "mean": 1165.3,
+      "median": 818,
+      "p95": 1953,
+      "p99": 1953,
+      "max": 1953
+    },
+    "pipeline_nmt_tts": {
+      "available": true,
+      "count": 3,
+      "min": 2612,
+      "mean": 3116.3,
+      "median": 2810,
+      "p95": 3927,
+      "p99": 3927,
+      "max": 3927
+    },
+    "audio_delivery": {
+      "available": true,
+      "count": 3,
+      "min": 1962,
+      "mean": 2144.3,
+      "median": 2235,
+      "p95": 2236,
+      "p99": 2236,
+      "max": 2236
+    },
+    "send": {
+      "available": true,
+      "count": 3,
+      "min": 16106,
+      "mean": 16218.3,
+      "median": 16245,
+      "p95": 16304,
+      "p99": 16304,
+      "max": 16304
+    }
+  },
+  "latency_by_turn": {
+    "1": {
+      "turn": 1,
+      "count": 1,
+      "success_count": 1,
+      "available": true,
+      "min": 21354,
+      "mean": 21354.0,
+      "median": 21354,
+      "p95": 21354,
+      "p99": 21354,
+      "max": 21354
+    },
+    "2": {
+      "turn": 2,
+      "count": 1,
+      "success_count": 1,
+      "available": true,
+      "min": 22337,
+      "mean": 22337.0,
+      "median": 22337,
+      "p95": 22337,
+      "p99": 22337,
+      "max": 22337
+    },
+    "3": {
+      "turn": 3,
+      "count": 1,
+      "success_count": 1,
+      "available": true,
+      "min": 20943,
+      "mean": 20943.0,
+      "median": 20943,
+      "p95": 20943,
+      "p99": 20943,
+      "max": 20943
+    }
+  },
+  "conversations": [
+    {
+      "language": "bn-IN",
+      "session_id": "41b776b2-e2c7-43bb-afd5-cea55b3eaccc",
+      "conversation_id": "conv_bn_001_bcaadae8",
+      "ws_connect_latency_ms": 2117,
+      "total_turns": 3,
+      "clean_successes": 3,
+      "partial_successes": 0,
+      "failures": 0,
+      "not_run": 0,
+      "reliability_pct": 100.0,
+      "pipeline_success_pct": 100.0,
+      "median_e2e_latency_ms": 21354,
+      "p95_e2e_latency_ms": 22337,
+      "median_asr_latency_ms": 818,
+      "median_pipeline_latency_ms": 2810,
+      "primary_failure_stage": null,
+      "ws_disconnects": 0,
+      "asr_failures": 0,
+      "nmt_tts_failures": 0,
+      "receive_failures": 0,
+      "decode_failures": 0,
+      "timeout_failures": 0,
+      "fixture_failures": 0
+    }
+  ]
+}

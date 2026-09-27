@@ -1,0 +1,129 @@
+{
+  "run_id": "d6fd8b7f-e828-4a35-8042-e3e0bd3e0b88",
+  "run_label": "ws_reliability_20260813_143019",
+  "started_at": 1786611619.8756402,
+  "finished_at": 1786611646.5876284,
+  "config": {
+    "target_url": "https://varta-ai-1-7wwd.onrender.com",
+    "n_conversations": 1,
+    "turns_per_convo": 1,
+    "target_language": "hi-IN",
+    "inter_turn_delay_sec": 7.0,
+    "inter_convo_delay_sec": 5.0,
+    "languages": [
+      "bn"
+    ]
+  },
+  "total_turns": 1,
+  "clean_successes": 0,
+  "partial_successes": 1,
+  "failures": 0,
+  "not_run": 0,
+  "clean_reliability_pct": 0.0,
+  "user_visible_success_pct": 100.0,
+  "pipeline_success_pct": 100.0,
+  "failure_breakdown": {
+    "connection": 0,
+    "fixture": 0,
+    "send": 0,
+    "asr": 0,
+    "nmt_tts": 0,
+    "receive": 0,
+    "decode": 1,
+    "timeout": 0,
+    "unknown": 0
+  },
+  "latency_stats": {
+    "e2e": {
+      "available": true,
+      "count": 1,
+      "min": 24835,
+      "mean": 24835.0,
+      "median": 24835,
+      "p95": 24835,
+      "p99": 24835,
+      "max": 24835
+    },
+    "asr": {
+      "available": true,
+      "count": 1,
+      "min": 5025,
+      "mean": 5025.0,
+      "median": 5025,
+      "p95": 5025,
+      "p99": 5025,
+      "max": 5025
+    },
+    "pipeline_nmt_tts": {
+      "available": true,
+      "count": 1,
+      "min": 5938,
+      "mean": 5938.0,
+      "median": 5938,
+      "p95": 5938,
+      "p99": 5938,
+      "max": 5938
+    },
+    "audio_delivery": {
+      "available": true,
+      "count": 1,
+      "min": 2469,
+      "mean": 2469.0,
+      "median": 2469,
+      "p95": 2469,
+      "p99": 2469,
+      "max": 2469
+    },
+    "send": {
+      "available": true,
+      "count": 1,
+      "min": 16425,
+      "mean": 16425.0,
+      "median": 16425,
+      "p95": 16425,
+      "p99": 16425,
+      "max": 16425
+    }
+  },
+  "latency_by_turn": {
+    "1": {
+      "turn": 1,
+      "count": 1,
+      "success_count": 0,
+      "available": true,
+      "min": 24835,
+      "mean": 24835.0,
+      "median": 24835,
+      "p95": 24835,
+      "p99": 24835,
+      "max": 24835
+    }
+  },
+  "conversations": [
+    {
+      "language": "bn-IN",
+      "session_id": "9e562f54-99c9-4cc1-859a-c51aaf1301dd",
+      "conversation_id": "conv_bn_001",
+      "ws_connect_latency_ms": 691,
+      "total_turns": 1,
+      "clean_successes": 0,
+      "partial_successes": 1,
+      "failures": 0,
+      "not_run": 0,
+      "reliability_pct": 0.0,
+      "pipeline_success_pct": 100.0,
+      "median_e2e_latency_ms": 24835,
+      "p95_e2e_latency_ms": 24835,
+      "median_asr_latency_ms": 5025,
+      "median_pipeline_latency_ms": 5938,
+      "primary_failure_stage": "DECODE",
+      "ws_disconnects": 0,
+      "asr_failures": 0,
+      "nmt_tts_failures": 0,
+      "receive_failures": 0,
+      "decode_failures": 1,
+      "timeout_failures": 0,
+      "fixture_failures": 0
+    }
+  ]
+}

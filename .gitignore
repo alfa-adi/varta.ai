@@ -17,7 +17,6 @@ __pycache__/
 output.txt
 # benchmark datasets, test outputs, and one-off debug scripts
 test/
-tests/
 check_*.py
 debug_*.py
 dummy_*
@@ -114,3 +113,10 @@ cpms/puppeteer_temp/
 # Scratch and Temporary
 scratch/
 temp_prompt.json
+
+# Scratch / temp files generated during development
+scratch_*.py
+ws_asr_live.txt
+tests/pip_err.txt
+tests/pip_out.txt
+tests/probe_output.txt
